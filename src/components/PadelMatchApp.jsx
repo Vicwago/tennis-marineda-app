@@ -132,7 +132,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData }) => {
+const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam }) => {
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
@@ -261,16 +261,28 @@ const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, set
                                     </div>
                                 </div>
                                 {isAdmin && (
-                                    <button
-                                        onClick={() => startEditing(team)}
-                                        className="absolute top-4 right-4 p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                                        style={{ color: 'var(--text-3)' }}
-                                        onMouseEnter={e => { e.currentTarget.style.color = '#E53935'; e.currentTarget.style.background = 'rgba(229,57,53,0.1)'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = ''; }}
-                                        title="Editar Disponibilidad"
-                                    >
-                                        <Settings size={18} />
-                                    </button>
+                                    <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                        <button
+                                            onClick={() => startEditing(team)}
+                                            className="p-2 rounded-full transition-all"
+                                            style={{ color: 'var(--text-3)' }}
+                                            onMouseEnter={e => { e.currentTarget.style.color = '#E53935'; e.currentTarget.style.background = 'rgba(229,57,53,0.1)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = ''; }}
+                                            title="Editar Disponibilidad"
+                                        >
+                                            <Settings size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => { if (confirm(`¿Eliminar a "${team.name}"? Esta acción no se puede deshacer.`)) onDeleteTeam(team.id); }}
+                                            className="p-2 rounded-full transition-all"
+                                            style={{ color: 'var(--text-3)' }}
+                                            onMouseEnter={e => { e.currentTarget.style.color = '#ff4444'; e.currentTarget.style.background = 'rgba(255,68,68,0.1)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = ''; }}
+                                            title="Eliminar Jugador"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -756,6 +768,39 @@ const StatsView = memo(({ matches, teams, isAdmin }) => {
                     {stats.total === 0 && (
                         <p className="text-center py-6" style={{ color: 'var(--text-3)' }}>Este jugador/pareja aún no tiene partidos completados.</p>
                     )}
+
+                    {stats.total > 0 && (
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                            <div className="p-4 font-bold text-white text-sm uppercase tracking-wider" style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', color: 'var(--text-2)' }}>
+                                Últimos partidos
+                            </div>
+                            {[...completedMatches.filter(m => m.t1.id === selectedTeamId || m.t2.id === selectedTeamId)]
+                                .sort((a, b) => b.id - a.id)
+                                .slice(0, 10)
+                                .map(m => {
+                                    const isWin = m.winner_id === selectedTeamId;
+                                    const opponent = m.t1.id === selectedTeamId ? m.t2 : m.t1;
+                                    const isWO = m.score === 'W.O.';
+                                    return (
+                                        <div key={m.id} className="flex items-center justify-between px-4 py-3 transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = ''}>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                                                    style={isWin
+                                                        ? { background: 'rgba(0,255,135,0.15)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.3)' }
+                                                        : { background: 'rgba(229,57,53,0.15)', color: '#ff6b6b', border: '1px solid rgba(229,57,53,0.3)' }}>
+                                                    {isWin ? 'G' : 'P'}
+                                                </div>
+                                                <span className="text-sm text-white">vs {opponent.name}</span>
+                                                {isWO && <span className="text-[10px] px-1.5 py-0.5 rounded font-bold" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B' }}>W.O.</span>}
+                                            </div>
+                                            <span className="text-sm font-mono font-bold" style={{ color: isWin ? '#00ff87' : 'var(--text-3)' }}>{m.score}</span>
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    )}
                 </>
             )}
         </div>
@@ -888,7 +933,7 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, currentSlots, updateTeamAvailability, updateCourtCount, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, importPlayers } = useData();
+    const { data, currentSlots, updateTeamAvailability, updateCourtCount, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, importPlayers, deleteTeam } = useData();
     const { unreadCount } = useNotifications();
 
     // Navigation State
@@ -1211,7 +1256,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
             <div className="max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} isAdmin={isAdmin} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} onChatClick={(match) => setChatMatch(match)} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} />}

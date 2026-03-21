@@ -612,6 +612,18 @@ export const DataProvider = ({ children }) => {
         }
     };
 
+    const deleteTeam = async (teamId) => {
+        try {
+            await supabase.from('availability').delete().eq('team_id', teamId);
+            const { error } = await supabase.from('teams').delete().eq('id', teamId);
+            if (error) throw error;
+            setTeams(prev => prev.filter(t => t.id !== teamId));
+        } catch (error) {
+            console.error('Error deleting team:', error);
+            alert('Error al eliminar jugador: ' + error.message);
+        }
+    };
+
     const importPlayers = async (playersData) => {
         try {
             setLoading(true);
@@ -712,6 +724,7 @@ export const DataProvider = ({ children }) => {
         postponeMatch,
         registerWalkover,
         importPlayers,
+        deleteTeam,
         createSchedule,
         generateDemoData,
         loading,
