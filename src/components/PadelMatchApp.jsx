@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import { useData } from '../context/DataContext';
@@ -40,31 +41,125 @@ const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 
 // --- Sub-components ---
 
-const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulkImport }) => (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
-        <div className="rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-in fade-in zoom-in duration-200" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)' }}>
-            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-                <FileSpreadsheet style={{ color: 'var(--cyan)' }} /> Importar desde Sheets/Excel
-            </h3>
-            <p className="text-xs mb-3" style={{ color: 'var(--text-3)' }}>
-                Copia las celdas en tu hoja de cálculo (Ctrl+C) y pégalas aquí (Ctrl+V).
-            </p>
-            <textarea
-                className="cyber-input w-full h-48 p-3 text-xs font-mono"
-                placeholder={`Formato recomendado:\nColumna A: Nombre\nColumna B: Grupo (Opcional)\nColumna C: Disponibilidad\n\nEjemplo:\nNadal\tGrupo A\tLunes 10:00, Martes 12:00`}
-                value={importText}
-                onChange={(e) => setImportText(e.target.value)}
-            />
-            <div className="flex justify-end gap-3 mt-4">
-                <button className="btn-cyber-outline px-4 py-2 text-sm rounded-lg" onClick={() => setShowImportModal(false)}>Cancelar</button>
-                <Button variant="success" onClick={handleBulkImport}>Procesar e Importar</Button>
+const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulkImport }) => {
+    const fileRef = useRef(null);
+    const [fileStatus, setFileStatus] = useState('');
+
+    const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setFileStatus('Leyendo archivo...');
+
+        // Excel .xlsx / .xls
+        if (file.name.match(/\.(xlsx|xls)$/i)) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const workbook = XLSX.read(ev.target.result, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                    const text = rows
+                        .filter(row => row[0]?.toString().trim())
+                        .map(row => row.slice(0, 3).map(c => c?.toString().trim() || '').join('\t'))
+                        .join('\n');
+                    setImportText(text);
+                    setFileStatus(`✓ ${rows.filter(r => r[0]).length} filas leídas`);
+                } catch {
+                    setFileStatus('Error al leer el archivo Excel');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            // CSV / TXT
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                setImportText(ev.target.result);
+                setFileStatus(`✓ Archivo cargado`);
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
+            <div className="rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-in fade-in zoom-in duration-200" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)' }}>
+                <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <FileSpreadsheet style={{ color: 'var(--cyan)' }} /> Importar Jugadores
+                </h3>
+
+                <div className="rounded-lg p-3 mb-3 text-xs space-y-1" style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.2)', color: 'var(--text-2)' }}>
+                    <p className="font-bold" style={{ color: 'var(--cyan)' }}>Opción 1 — Subir archivo Excel o CSV:</p>
+                    <p>Pulsa "Subir archivo" y selecciona tu <span className="text-white">.xlsx</span>, <span className="text-white">.xls</span> o <span className="text-white">.csv</span></p>
+                    <p className="font-bold mt-2" style={{ color: 'var(--cyan)' }}>Opción 2 — Copiar desde Google Sheets / Excel:</p>
+                    <p>Selecciona las celdas → Copia (Ctrl+C) → Pega abajo (Ctrl+V)</p>
+                    <p className="mt-2 font-bold">Columnas esperadas (en orden):</p>
+                    <p>A: <span className="text-white">Nombre</span> &nbsp;·&nbsp; B: <span className="text-white">Grupo</span> (opcional) &nbsp;·&nbsp; C: <span className="text-white">Disponibilidad</span> (opcional)</p>
+                </div>
+
+                <div className="flex gap-2 mb-3 items-center">
+                    <button
+                        onClick={() => fileRef.current?.click()}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all"
+                        style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.3)', color: 'var(--cyan)' }}
+                    >
+                        <Upload size={16} /> Subir archivo (.xlsx / .csv)
+                    </button>
+                    <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden" onChange={handleFileUpload} />
+                    {fileStatus && <span className="text-xs" style={{ color: fileStatus.startsWith('✓') ? '#00ff87' : '#ff6b6b' }}>{fileStatus}</span>}
+                </div>
+
+                <p className="text-xs text-center mb-2" style={{ color: 'var(--text-3)' }}>— o pega directamente aquí —</p>
+                <textarea
+                    className="cyber-input w-full h-40 p-3 text-xs font-mono"
+                    placeholder={"García López\tGrupo A\tLunes 10:00, Martes 12:00\nMartínez Pérez\tGrupo B\nRodríguez Sánchez"}
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                />
+                <div className="flex justify-between items-center mt-4">
+                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                        {importText.trim() ? `${importText.trim().split('\n').filter(l => l.trim()).length} jugadores detectados` : ''}
+                    </span>
+                    <div className="flex gap-3">
+                        <button className="btn-cyber-outline px-4 py-2 text-sm rounded-lg" onClick={() => setShowImportModal(false)}>Cancelar</button>
+                        <Button variant="success" onClick={handleBulkImport} disabled={!importText.trim()}>Importar</Button>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, fillDailyCourts, updateCourtCount }) => {
     const [expandedDay, setExpandedDay] = useState(DAYS[0]);
+    const [customSlots, setCustomSlots] = useState(() => {
+        try { return JSON.parse(localStorage.getItem(`custom_slots_${sport}_${tennisCategory}`) || '{}'); } catch { return {}; }
+    });
+    const [addingSlotDay, setAddingSlotDay] = useState(null);
+    const [newHour, setNewHour] = useState('');
+
+    const saveCustomSlots = (updated) => {
+        setCustomSlots(updated);
+        localStorage.setItem(`custom_slots_${sport}_${tennisCategory}`, JSON.stringify(updated));
+    };
+
+    const addCustomSlot = (day) => {
+        if (!newHour.match(/^\d{2}:\d{2}$/)) { alert('Formato incorrecto. Usa HH:MM (ej: 15:30)'); return; }
+        const id = `custom_${day.substring(0,3).toLowerCase()}_${newHour}`;
+        const updated = { ...customSlots, [id]: { id, day, hour: newHour, custom: true } };
+        saveCustomSlots(updated);
+        setAddingSlotDay(null);
+        setNewHour('');
+    };
+
+    const removeCustomSlot = (id) => {
+        const updated = { ...customSlots };
+        delete updated[id];
+        saveCustomSlots(updated);
+    };
+
+    const getExtraSlots = (day) => Object.values(customSlots).filter(s => s.day === day);
+    const allSlotsForDay = (day) => [...currentSlots.filter(s => s.day === day), ...getExtraSlots(day)];
+
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             <div className="p-4 rounded-xl flex items-start gap-3" style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.2)' }}>
@@ -76,63 +171,100 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                     <p className="text-sm" style={{ color: 'var(--text-2)' }}>
                         Gestiona los cupos disponibles por hora.
                         {sport === 'tennis' ? (tennisCategory === 'adults' ? ' (Turnos de 2h)' : ' (Turnos de 1h)') : ' (Turnos de 90min)'}
+                        {isAdmin && <span style={{ color: 'var(--cyan)' }}> · Puedes añadir horarios especiales con el botón + de cada día.</span>}
                     </p>
                 </div>
             </div>
 
             <div className="grid gap-3">
-                {DAYS.map(day => (
-                    <div key={day} className="rounded-xl overflow-hidden transition-shadow" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                        <div
-                            className="p-4 flex justify-between items-center cursor-pointer transition-colors"
-                            style={{ background: 'rgba(255,255,255,0.02)' }}
-                            onClick={() => setExpandedDay(expandedDay === day ? null : day)}
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="w-1 h-8 rounded-full" style={{ background: expandedDay === day ? '#E53935' : 'rgba(255,255,255,0.1)' }}></div>
-                                <h4 className="font-bold text-white text-lg">{day}</h4>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs font-medium px-2 py-1 rounded-md" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.15)' }}>
-                                    {currentSlots.filter(s => s.day === day).reduce((acc, curr) => acc + (courtAvailability[curr.id] || 0), 0)} cupos
-                                </span>
-                                {expandedDay === day ? <ChevronDown size={20} style={{ color: 'var(--text-3)' }} /> : <ChevronRight size={20} style={{ color: 'var(--text-3)' }} />}
-                            </div>
-                        </div>
-
-                        {expandedDay === day && (
-                            <div className="p-4" style={{ borderTop: '1px solid var(--border)' }}>
-                                {isAdmin && (
-                                    <div className="flex justify-end mb-4 gap-2 items-center p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                                        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Relleno Rápido:</span>
-                                        <button onClick={() => fillDailyCourts(day, 0)} className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>Vaciar</button>
-                                        <button onClick={() => fillDailyCourts(day, sport === 'padel' ? 3 : 7)} className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.15)' }}>Llenar</button>
-                                    </div>
-                                )}
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {currentSlots.filter(s => s.day === day).map(slot => (
-                                        <div key={slot.id} className="flex justify-between items-center p-3 rounded-lg transition-colors" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                                            <span className="text-sm font-mono font-bold text-white">{slot.hour}</span>
-                                            <div className="flex items-center gap-2">
-                                                {isAdmin && <button onClick={() => updateCourtCount(slot.id, -1)} className="w-8 h-8 flex items-center justify-center rounded-lg font-bold transition-colors" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>-</button>}
-                                                <span className="w-8 text-center font-bold text-lg" style={{ color: (courtAvailability[slot.id] || 0) === 0 ? '#ff6b6b' : 'var(--cyan)' }}>
-                                                    {courtAvailability[slot.id] || 0}
-                                                </span>
-                                                {isAdmin && <button onClick={() => updateCourtCount(slot.id, 1)} className="w-8 h-8 flex items-center justify-center rounded-lg font-bold transition-colors" style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>+</button>}
-                                            </div>
-                                        </div>
-                                    ))}
+                {DAYS.map(day => {
+                    const allSlots = allSlotsForDay(day);
+                    const totalCupos = allSlots.reduce((acc, slot) => acc + (courtAvailability[slot.id] || 0), 0);
+                    return (
+                        <div key={day} className="rounded-xl overflow-hidden transition-shadow" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                            <div className="p-4 flex justify-between items-center cursor-pointer transition-colors" style={{ background: 'rgba(255,255,255,0.02)' }}
+                                onClick={() => setExpandedDay(expandedDay === day ? null : day)}>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-1 h-8 rounded-full" style={{ background: expandedDay === day ? '#E53935' : 'rgba(255,255,255,0.1)' }}></div>
+                                    <h4 className="font-bold text-white text-lg">{day}</h4>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs font-medium px-2 py-1 rounded-md" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.15)' }}>
+                                        {totalCupos} cupos
+                                    </span>
+                                    {expandedDay === day ? <ChevronDown size={20} style={{ color: 'var(--text-3)' }} /> : <ChevronRight size={20} style={{ color: 'var(--text-3)' }} />}
                                 </div>
                             </div>
-                        )}
-                    </div>
-                ))}
+
+                            {expandedDay === day && (
+                                <div className="p-4" style={{ borderTop: '1px solid var(--border)' }}>
+                                    {isAdmin && (
+                                        <div className="flex justify-between mb-4 gap-2 items-center flex-wrap p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                                            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Relleno Rápido:</span>
+                                            <div className="flex gap-2 items-center">
+                                                <button onClick={() => fillDailyCourts(day, 0)} className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>Vaciar</button>
+                                                <button onClick={() => fillDailyCourts(day, sport === 'padel' ? 3 : 7)} className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.15)' }}>Llenar</button>
+                                                <button onClick={(e) => { e.stopPropagation(); setAddingSlotDay(addingSlotDay === day ? null : day); setNewHour(''); }}
+                                                    className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1"
+                                                    style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>
+                                                    + Horario especial
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Add custom slot form */}
+                                    {isAdmin && addingSlotDay === day && (
+                                        <div className="mb-4 flex items-center gap-2 p-3 rounded-lg" style={{ background: 'rgba(0,255,135,0.06)', border: '1px solid rgba(0,255,135,0.2)' }}>
+                                            <Clock size={16} style={{ color: '#00ff87' }} />
+                                            <span className="text-sm text-white">Añadir hora:</span>
+                                            <input
+                                                className="cyber-input px-2 py-1 rounded text-sm font-mono w-24"
+                                                placeholder="HH:MM"
+                                                value={newHour}
+                                                onChange={e => setNewHour(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && addCustomSlot(day)}
+                                                autoFocus
+                                            />
+                                            <button onClick={() => addCustomSlot(day)} className="text-xs px-3 py-1.5 rounded-md font-bold" style={{ background: 'rgba(0,255,135,0.15)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.3)' }}>Añadir</button>
+                                            <button onClick={() => setAddingSlotDay(null)} className="text-xs px-2 py-1.5 rounded-md" style={{ color: 'var(--text-3)' }}>Cancelar</button>
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                        {allSlots.map(slot => (
+                                            <div key={slot.id} className="flex justify-between items-center p-3 rounded-lg transition-colors"
+                                                style={{ background: slot.custom ? 'rgba(0,255,135,0.05)' : 'rgba(255,255,255,0.03)', border: slot.custom ? '1px solid rgba(0,255,135,0.25)' : '1px solid var(--border)' }}>
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-mono font-bold text-white">{slot.hour}</span>
+                                                    {slot.custom && <span className="text-[10px]" style={{ color: '#00ff87' }}>especial</span>}
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    {isAdmin && <button onClick={() => updateCourtCount(slot.id, -1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>-</button>}
+                                                    <span className="w-7 text-center font-bold" style={{ color: (courtAvailability[slot.id] || 0) === 0 ? '#ff6b6b' : 'var(--cyan)' }}>
+                                                        {courtAvailability[slot.id] || 0}
+                                                    </span>
+                                                    {isAdmin && <button onClick={() => updateCourtCount(slot.id, 1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>+</button>}
+                                                    {isAdmin && slot.custom && (
+                                                        <button onClick={() => removeCustomSlot(slot.id)} className="w-7 h-7 flex items-center justify-center rounded-lg ml-1" style={{ background: 'rgba(229,57,53,0.08)', color: '#ff6b6b', border: '1px solid rgba(229,57,53,0.2)' }} title="Eliminar horario">
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam }) => {
+const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onClearAll }) => {
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
@@ -164,8 +296,20 @@ const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, set
                             <Button variant="secondary" size="sm" onClick={generateDemoData} title="Generar datos de prueba">
                                 <RefreshCw size={18} />
                             </Button>
-                            <Button variant="success" size="sm" onClick={() => setShowImportModal(true)} title="Importar Excel">
+                            <Button variant="success" size="sm" onClick={() => setShowImportModal(true)} title="Importar jugadores desde Excel/CSV">
                                 <Upload size={18} />
+                            </Button>
+                            <Button
+                                variant="danger"
+                                size="sm"
+                                title="Borrar todos los jugadores y partidos"
+                                onClick={() => {
+                                    if (confirm(`⚠️ ¿Borrar TODOS los jugadores y partidos? Esta acción no se puede deshacer.`)) {
+                                        onClearAll();
+                                    }
+                                }}
+                            >
+                                <X size={18} />
                             </Button>
                         </>
                     )}
@@ -933,12 +1077,14 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, currentSlots, updateTeamAvailability, updateCourtCount, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, importPlayers, deleteTeam } = useData();
+    const { data, currentSlots, updateTeamAvailability, updateCourtCount, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, importPlayers, deleteTeam, clearAllData } = useData();
     const { unreadCount } = useNotifications();
 
     // Navigation State
     const [activeTab, setActiveTab] = useState('home'); // home, schedule, teams, standings, courts, availability, history, stats, calendar
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [activeStandingsGroup, setActiveStandingsGroup] = useState(null);
+    const [sidebarExpandedSport, setSidebarExpandedSport] = useState(null);
 
     // Overlay State
     const [chatMatch, setChatMatch] = useState(null);
@@ -1256,117 +1402,130 @@ export default function Dashboard({ onNavigate, currentPath }) {
             <div className="max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} isAdmin={isAdmin} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} onChatClick={(match) => setChatMatch(match)} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onClearAll={clearAllData} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} />}
                 {activeTab === 'calendar' && <CalendarView matches={matches} currentSlots={currentSlots} />}
-                {activeTab === 'standings' && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                        {[...new Set(teams.map(t => t.group || 'General').filter(Boolean))].sort().map(group => {
-                            const groupTeams = teams.filter(t => (t.group || 'General') === group).sort((a, b) => b.points - a.points);
-                            const topPlayer = groupTeams[0];
-
-                            return (
-                                <div key={group} className="space-y-4">
-                                    {/* Highlight Top Player */}
-                                    {topPlayer && (
-                                        <div className="p-0.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255,193,7,0.5), rgba(255,193,7,0.1), transparent)' }}>
-                                            <div className="p-4 rounded-2xl flex items-center gap-4" style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,193,7,0.2)' }}>
-                                                <div className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl shadow-lg" style={{ background: 'rgba(255,193,7,0.2)', border: '1px solid rgba(255,193,7,0.4)', color: '#FFC107' }}>
-                                                    <Trophy size={24} />
+                {activeTab === 'standings' && (() => {
+                    const GROUP_COLORS = [
+                        { accent: '#E53935', border: 'rgba(229,57,53,0.4)', bg: 'rgba(229,57,53,0.08)', tabBg: 'rgba(229,57,53,0.18)' },
+                        { accent: '#FFC107', border: 'rgba(255,193,7,0.4)', bg: 'rgba(255,193,7,0.07)', tabBg: 'rgba(255,193,7,0.15)' },
+                        { accent: '#00d4ff', border: 'rgba(0,212,255,0.4)', bg: 'rgba(0,212,255,0.07)', tabBg: 'rgba(0,212,255,0.15)' },
+                        { accent: '#00ff87', border: 'rgba(0,255,135,0.4)', bg: 'rgba(0,255,135,0.07)', tabBg: 'rgba(0,255,135,0.15)' },
+                        { accent: '#AB47BC', border: 'rgba(171,71,188,0.4)', bg: 'rgba(171,71,188,0.07)', tabBg: 'rgba(171,71,188,0.15)' },
+                    ];
+                    const groups = [...new Set(teams.map(t => t.group || 'General').filter(Boolean))].sort();
+                    const curGroup = (activeStandingsGroup && groups.includes(activeStandingsGroup)) ? activeStandingsGroup : groups[0] || null;
+                    if (groups.length === 0) return <div className="text-center py-12" style={{ color: 'var(--text-3)' }}>No hay jugadores registrados en el ranking.</div>;
+                    const colorIdx = groups.indexOf(curGroup) % GROUP_COLORS.length;
+                    const color = GROUP_COLORS[colorIdx];
+                    const groupTeams = teams.filter(t => (t.group || 'General') === curGroup).sort((a, b) => b.points - a.points);
+                    return (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            {/* Group tabs */}
+                            <div className="flex flex-wrap gap-2">
+                                {groups.map((g, i) => {
+                                    const c = GROUP_COLORS[i % GROUP_COLORS.length];
+                                    const isAct = g === curGroup;
+                                    return (
+                                        <button key={g} onClick={() => setActiveStandingsGroup(g)}
+                                            className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
+                                            style={isAct ? { background: c.tabBg, border: `1px solid ${c.accent}`, color: 'white' } : { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-3)' }}>
+                                            {g}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {/* Leader banner */}
+                            {groupTeams[0] && (
+                                <div className="p-0.5 rounded-2xl" style={{ background: `linear-gradient(135deg, ${color.border}, transparent)` }}>
+                                    <div className="p-4 rounded-2xl flex items-center gap-4" style={{ background: 'var(--bg-card)', border: `1px solid ${color.border}` }}>
+                                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: color.bg, border: `1px solid ${color.border}`, color: color.accent }}>
+                                            <Trophy size={24} />
+                                        </div>
+                                        <div>
+                                            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: color.accent }}>Líder — {curGroup}</span>
+                                            <h3 className="text-lg font-bold text-white">{groupTeams[0].name}</h3>
+                                        </div>
+                                        <div className="ml-auto text-right">
+                                            <span className="block text-2xl font-bold" style={{ color: color.accent }}>{groupTeams[0].points}</span>
+                                            <span className="text-xs" style={{ color: 'var(--text-3)' }}>Puntos</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            {/* Table */}
+                            <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: `1px solid ${color.border}` }}>
+                                <div className="p-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border)', background: color.bg }}>
+                                    <Trophy style={{ color: color.accent }} size={20} />
+                                    <h3 className="font-bold text-white">{curGroup}</h3>
+                                    <span className="text-xs ml-auto" style={{ color: 'var(--text-3)' }}>{groupTeams.length} jugadores · Top 3 ascienden</span>
+                                </div>
+                                {/* Mobile */}
+                                <div className="block md:hidden">
+                                    {groupTeams.map((t, i) => (
+                                        <div key={t.id} className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)', background: i < 3 ? color.bg : '' }}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i === 0 ? 'bg-yellow-400 text-black' : i === 1 ? 'bg-slate-500 text-white' : i === 2 ? 'bg-amber-700 text-white' : ''}`}
+                                                    style={i > 2 ? { background: 'rgba(255,255,255,0.08)', color: 'var(--text-2)' } : {}}>
+                                                    {i + 1}
                                                 </div>
                                                 <div>
-                                                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#FFC107' }}>Líder del Grupo {group}</span>
-                                                    <h3 className="text-lg font-bold text-white">{topPlayer.name}</h3>
-                                                </div>
-                                                <div className="ml-auto text-right">
-                                                    <span className="block text-2xl font-bold" style={{ color: '#FFC107' }}>{topPlayer.points}</span>
-                                                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>Puntos</span>
+                                                    <span className="font-medium text-white block">{t.name}</span>
+                                                    <span className="text-[10px]">
+                                                        {i < 3 ? <span style={{ color: '#00ff87' }}>⬆ Asciende de división</span> : <span style={{ color: 'var(--text-3)' }}>— Mantiene posición</span>}
+                                                    </span>
                                                 </div>
                                             </div>
+                                            <span className="font-bold text-lg" style={{ color: color.accent }}>{t.points} pts</span>
                                         </div>
-                                    )}
-
-                                    <Card className="overflow-hidden">
-                                        <div className="p-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.03)' }}>
-                                            <Trophy style={{ color: 'var(--cyan)' }} size={20} />
-                                            <h3 className="font-bold text-white">{group}</h3>
-                                        </div>
-
-                                        {/* Mobile View */}
-                                        <div className="block md:hidden">
-                                            {groupTeams.map((t, i) => (
-                                                <div key={t.id} className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i === 0 ? 'bg-yellow-400 text-black shadow-md' :
-                                                            i === 1 ? 'bg-slate-500 text-white shadow-sm' :
-                                                                i === 2 ? 'bg-amber-700 text-white shadow-sm' :
-                                                                    ''
-                                                            }`} style={i > 2 ? { background: 'rgba(255,255,255,0.08)', color: 'var(--text-2)' } : {}}>
-                                                            {i + 1}
-                                                        </div>
-                                                        <div>
-                                                            <span className="font-medium text-white block">{t.name}</span>
-                                                            <span className="text-[10px] flex items-center gap-1">
-                                                                {i < 2 ? <span style={{ color: '#00ff87' }}>▲ Subiendo</span> : <span style={{ color: 'var(--text-3)' }}>— Estable</span>}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <span className="font-bold text-lg" style={{ color: '#E53935' }}>{t.points} pts</span>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {/* Desktop View */}
-                                        <table className="w-full text-sm text-left hidden md:table">
-                                            <thead className="text-xs font-bold tracking-wider uppercase" style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}>
-                                                <tr>
-                                                    <th className="p-4 w-16 text-center">Pos</th>
-                                                    <th className="p-4">Pareja / Jugador</th>
-                                                    <th className="p-4 text-center">Tendencia</th>
-                                                    <th className="p-4 text-center">PJ</th>
-                                                    <th className="p-4 text-center">Puntos</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {groupTeams.map((t, i) => (
-                                                    <tr key={t.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
-                                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                                                        onMouseLeave={e => e.currentTarget.style.background = ''}>
-                                                        <td className="p-4 text-center">
-                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm mx-auto ${i === 0 ? 'bg-yellow-400 text-black shadow-md' :
-                                                                i === 1 ? 'bg-slate-500 text-white shadow-sm' :
-                                                                    i === 2 ? 'bg-amber-700 text-white shadow-sm' : ''
-                                                                }`} style={i > 2 ? { background: 'rgba(255,255,255,0.08)', color: 'var(--text-2)' } : {}}>
-                                                                {i + 1}
-                                                            </div>
-                                                        </td>
-                                                        <td className="p-4 font-medium text-white">{t.name}</td>
-                                                        <td className="p-4 text-center">
-                                                            {i < 2 ? (
-                                                                <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full" style={{ background: 'rgba(0,255,135,0.1)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>
-                                                                    ▲ Subiendo
-                                                                </span>
-                                                            ) : (
-                                                                <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
-                                                                    — Estable
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                        <td className="p-4 text-center font-mono" style={{ color: 'var(--text-2)' }}>{t.matchesPlayed || 0}</td>
-                                                        <td className="p-4 text-center font-bold text-lg" style={{ color: '#E53935' }}>{t.points}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </Card>
+                                    ))}
                                 </div>
-                            );
-                        })}
-                        {teams.length === 0 && <div className="text-center py-12" style={{ color: 'var(--text-3)' }}>No hay jugadores registrados en el ranking.</div>}
-                    </div>
-                )}
+                                {/* Desktop */}
+                                <table className="w-full text-sm text-left hidden md:table">
+                                    <thead className="text-xs font-bold tracking-wider uppercase" style={{ background: color.bg, color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}>
+                                        <tr>
+                                            <th className="p-4 w-16 text-center">Pos</th>
+                                            <th className="p-4">Pareja / Jugador</th>
+                                            <th className="p-4 text-center">Situación</th>
+                                            <th className="p-4 text-center">PJ</th>
+                                            <th className="p-4 text-center">Puntos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {groupTeams.map((t, i) => (
+                                            <tr key={t.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', background: i < 3 ? color.bg : '' }}
+                                                onMouseEnter={e => e.currentTarget.style.background = color.bg}
+                                                onMouseLeave={e => e.currentTarget.style.background = i < 3 ? color.bg : ''}>
+                                                <td className="p-4 text-center">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm mx-auto ${i === 0 ? 'bg-yellow-400 text-black' : i === 1 ? 'bg-slate-500 text-white' : i === 2 ? 'bg-amber-700 text-white' : ''}`}
+                                                        style={i > 2 ? { background: 'rgba(255,255,255,0.08)', color: 'var(--text-2)' } : {}}>
+                                                        {i + 1}
+                                                    </div>
+                                                </td>
+                                                <td className="p-4 font-medium text-white">{t.name}</td>
+                                                <td className="p-4 text-center">
+                                                    {i < 3 ? (
+                                                        <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full" style={{ background: 'rgba(0,255,135,0.12)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.3)' }}>
+                                                            ⬆ Asciende
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+                                                            — Mantiene
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="p-4 text-center font-mono" style={{ color: 'var(--text-2)' }}>{t.matchesPlayed || 0}</td>
+                                                <td className="p-4 text-center font-bold text-lg" style={{ color: color.accent }}>{t.points}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
         );
     };
@@ -1467,24 +1626,94 @@ export default function Dashboard({ onNavigate, currentPath }) {
 
                     <div className="pt-4 pb-2 px-4 text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Deportes</div>
 
-                    <button
-                        onClick={() => { setSport('padel'); setActiveTab(isAdmin ? 'schedule' : 'availability'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                        style={sport === 'padel' ? { background: 'rgba(229,57,53,0.15)', borderLeft: '3px solid #E53935', color: 'white', paddingLeft: '13px' } : { color: 'var(--text-3)' }}
-                        onMouseEnter={e => { if (sport !== 'padel') { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'white'; } }}
-                        onMouseLeave={e => { if (sport !== 'padel') { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--text-3)'; } }}
-                    >
-                        <Activity size={20} /> Pádel
-                    </button>
-                    <button
-                        onClick={() => { setSport('tennis'); setActiveTab(isAdmin ? 'schedule' : 'availability'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                        style={sport === 'tennis' ? { background: 'rgba(255,193,7,0.12)', borderLeft: '3px solid #FFC107', color: 'white', paddingLeft: '13px' } : { color: 'var(--text-3)' }}
-                        onMouseEnter={e => { if (sport !== 'tennis') { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'white'; } }}
-                        onMouseLeave={e => { if (sport !== 'tennis') { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--text-3)'; } }}
-                    >
-                        <Activity size={20} /> Tenis
-                    </button>
+                    {/* Pádel expandible */}
+                    <div>
+                        <button
+                            onClick={() => { setSidebarExpandedSport(sidebarExpandedSport === 'padel' ? null : 'padel'); setSport('padel'); setActiveTab(isAdmin ? 'schedule' : 'availability'); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                            style={sport === 'padel' ? { background: 'rgba(229,57,53,0.15)', borderLeft: '3px solid #E53935', color: 'white', paddingLeft: '13px' } : { color: 'var(--text-3)' }}
+                            onMouseEnter={e => { if (sport !== 'padel') { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'white'; } }}
+                            onMouseLeave={e => { if (sport !== 'padel') { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--text-3)'; } }}
+                        >
+                            <Activity size={20} /> <span className="flex-1 text-left">Pádel</span>
+                            {(sport === 'padel' || sidebarExpandedSport === 'padel') ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                        {(sport === 'padel' || sidebarExpandedSport === 'padel') && (
+                            <div className="ml-4 mt-1 space-y-0.5 pl-3" style={{ borderLeft: '2px solid rgba(229,57,53,0.3)' }}>
+                                {[
+                                    { tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Mi Disponibilidad' },
+                                    { tab: 'standings', label: 'Ranking' },
+                                    { tab: 'teams', label: 'Parejas' },
+                                    { tab: 'history', label: 'Historial' },
+                                    ...(isAdmin ? [{ tab: 'courts', label: 'Pistas' }] : []),
+                                ].map(item => (
+                                    <button key={item.tab}
+                                        onClick={() => { setSport('padel'); setActiveTab(item.tab); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
+                                        style={sport === 'padel' && activeTab === item.tab ? { color: '#E53935', fontWeight: 700 } : { color: 'var(--text-3)' }}
+                                        onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.color = sport === 'padel' && activeTab === item.tab ? '#E53935' : 'var(--text-3)'; e.currentTarget.style.background = ''; }}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Tenis expandible */}
+                    <div>
+                        <button
+                            onClick={() => { setSidebarExpandedSport(sidebarExpandedSport === 'tennis' ? null : 'tennis'); setSport('tennis'); setActiveTab(isAdmin ? 'schedule' : 'availability'); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                            style={sport === 'tennis' ? { background: 'rgba(255,193,7,0.12)', borderLeft: '3px solid #FFC107', color: 'white', paddingLeft: '13px' } : { color: 'var(--text-3)' }}
+                            onMouseEnter={e => { if (sport !== 'tennis') { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'white'; } }}
+                            onMouseLeave={e => { if (sport !== 'tennis') { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--text-3)'; } }}
+                        >
+                            <Activity size={20} /> <span className="flex-1 text-left">Tenis</span>
+                            {(sport === 'tennis' || sidebarExpandedSport === 'tennis') ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                        {(sport === 'tennis' || sidebarExpandedSport === 'tennis') && (
+                            <div className="ml-4 mt-1 space-y-0.5 pl-3" style={{ borderLeft: '2px solid rgba(255,193,7,0.3)' }}>
+                                <div className="px-3 py-1 text-xs font-bold uppercase tracking-wider" style={{ color: 'rgba(255,193,7,0.6)' }}>Adultos</div>
+                                {[
+                                    { tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Mi Disponibilidad' },
+                                    { tab: 'standings', label: 'Ranking' },
+                                    { tab: 'teams', label: 'Jugadores' },
+                                    { tab: 'history', label: 'Historial' },
+                                    ...(isAdmin ? [{ tab: 'courts', label: 'Pistas' }] : []),
+                                ].map(item => (
+                                    <button key={'adults-' + item.tab}
+                                        onClick={() => { setSport('tennis'); setTennisCategory('adults'); setActiveTab(item.tab); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
+                                        style={sport === 'tennis' && tennisCategory === 'adults' && activeTab === item.tab ? { color: '#FFC107', fontWeight: 700 } : { color: 'var(--text-3)' }}
+                                        onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.color = sport === 'tennis' && tennisCategory === 'adults' && activeTab === item.tab ? '#FFC107' : 'var(--text-3)'; e.currentTarget.style.background = ''; }}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                                <div className="px-3 py-1 text-xs font-bold uppercase tracking-wider mt-2" style={{ color: 'rgba(255,193,7,0.6)' }}>Juveniles</div>
+                                {[
+                                    { tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Mi Disponibilidad' },
+                                    { tab: 'standings', label: 'Ranking' },
+                                    { tab: 'teams', label: 'Jugadores' },
+                                    { tab: 'history', label: 'Historial' },
+                                    ...(isAdmin ? [{ tab: 'courts', label: 'Pistas' }] : []),
+                                ].map(item => (
+                                    <button key={'juv-' + item.tab}
+                                        onClick={() => { setSport('tennis'); setTennisCategory('juveniles'); setActiveTab(item.tab); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
+                                        style={sport === 'tennis' && tennisCategory === 'juveniles' && activeTab === item.tab ? { color: '#FFC107', fontWeight: 700 } : { color: 'var(--text-3)' }}
+                                        onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.color = sport === 'tennis' && tennisCategory === 'juveniles' && activeTab === item.tab ? '#FFC107' : 'var(--text-3)'; e.currentTarget.style.background = ''; }}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
                     {isAdmin && (
                         <>

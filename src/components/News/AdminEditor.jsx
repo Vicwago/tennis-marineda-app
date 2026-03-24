@@ -1,15 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Save, Image as ImageIcon, X, Loader2 } from 'lucide-react';
+import { Save, Image as ImageIcon, X, Loader2, Upload } from 'lucide-react';
 
 const AdminEditor = ({ onSave, onCancel }) => {
     const { user } = useAuth();
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [imageUrl, setImageUrl] = useState('');
+    const [imagePreview, setImagePreview] = useState('');
+    const [uploading, setUploading] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const fileRef = useRef(null);
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Local preview instantly
+        setImagePreview(URL.createObjectURL(file));
+
+        setUploading(true);
+        setError('');
+        try {
+            const ext = file.name.split('.').pop();
+            const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('news-images')
+                .upload(fileName, file, { upsert: false });
+
+            if (uploadError) throw uploadError;
+
+            const { data } = supabase.storage
+                .from('news-images')
+                .getPublicUrl(fileName);
+
+            setImageUrl(data.publicUrl);
+        } catch (err) {
+            setError('Error al subir la imagen: ' + err.message);
+            setImagePreview('');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const removeImage = () => {
+        setImageUrl('');
+        setImagePreview('');
+        if (fileRef.current) fileRef.current.value = '';
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -25,19 +66,16 @@ const AdminEditor = ({ onSave, onCancel }) => {
         try {
             const { data, error } = await supabase
                 .from('chronicles')
-                .insert([
-                    {
-                        title,
-                        content,
-                        image_url: imageUrl,
-                        author_id: user.id,
-                        is_published: true
-                    }
-                ])
+                .insert([{
+                    title,
+                    content,
+                    image_url: imageUrl,
+                    author_id: user.id,
+                    is_published: true
+                }])
                 .select();
 
             if (error) throw error;
-
             onSave(data[0]);
         } catch (err) {
             console.error('Error saving article:', err);
@@ -75,25 +113,62 @@ const AdminEditor = ({ onSave, onCancel }) => {
                 </div>
 
                 <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Imagen (URL)</label>
-                    <div className="flex gap-2">
-                        <div className="relative flex-1">
-                            <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                            <input
-                                type="text"
-                                value={imageUrl}
-                                onChange={(e) => setImageUrl(e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 pl-10 text-white focus:ring-2 focus:ring-brand-yellow outline-none transition-all"
-                                placeholder="https://..."
-                            />
-                        </div>
-                    </div>
-                    {imageUrl && (
-                        <div className="mt-2 h-32 rounded-lg overflow-hidden border border-slate-700 relative group">
-                            <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <span className="text-xs text-white font-bold">Vista Previa</span>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Imagen</label>
+                    <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        onChange={handleImageUpload}
+                    />
+
+                    {!imagePreview ? (
+                        <button
+                            type="button"
+                            onClick={() => fileRef.current?.click()}
+                            disabled={uploading}
+                            className="w-full h-28 rounded-lg border-2 border-dashed border-slate-600 hover:border-slate-400 flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
+                            style={{ background: 'rgba(255,255,255,0.02)' }}
+                        >
+                            {uploading ? (
+                                <>
+                                    <Loader2 className="animate-spin text-slate-400" size={24} />
+                                    <span className="text-xs text-slate-400">Subiendo imagen...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Upload className="text-slate-400" size={24} />
+                                    <span className="text-sm text-slate-400">Haz clic para subir una imagen</span>
+                                    <span className="text-xs text-slate-600">JPG, PNG, WEBP o GIF · máx 5 MB</span>
+                                </>
+                            )}
+                        </button>
+                    ) : (
+                        <div className="relative h-40 rounded-lg overflow-hidden border border-slate-700 group">
+                            <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                    type="button"
+                                    onClick={() => fileRef.current?.click()}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white"
+                                    style={{ background: 'rgba(255,255,255,0.2)' }}
+                                >
+                                    <ImageIcon size={14} className="inline mr-1" />Cambiar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={removeImage}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white"
+                                    style={{ background: 'rgba(220,38,38,0.7)' }}
+                                >
+                                    <X size={14} className="inline mr-1" />Quitar
+                                </button>
                             </div>
+                            {uploading && (
+                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                    <Loader2 className="animate-spin text-white" size={28} />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -119,7 +194,7 @@ const AdminEditor = ({ onSave, onCancel }) => {
                     </button>
                     <button
                         type="submit"
-                        disabled={loading}
+                        disabled={loading || uploading}
                         className="px-6 py-2 bg-brand-yellow text-brand-dark font-bold rounded-lg hover:bg-yellow-400 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}

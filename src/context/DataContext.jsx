@@ -18,7 +18,7 @@ const generateSlots = (sport, category) => {
     let hours = [];
 
     if (sport === 'padel') {
-        hours = ['09:00', '10:30', '12:00', '16:00', '17:30', '19:00', '20:30', '22:00'];
+        hours = ['09:00', '10:00', '12:00', '16:00', '18:00', '19:00', '21:00'];
     } else if (sport === 'tennis') {
         if (category === 'adults') {
             hours = ['10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
@@ -612,6 +612,34 @@ export const DataProvider = ({ children }) => {
         }
     };
 
+    const clearAllData = async () => {
+        try {
+            setLoading(true);
+            // Get all team IDs for this sport
+            const { data: sportTeams } = await supabase
+                .from('teams')
+                .select('id')
+                .eq('sport', sport);
+
+            if (sportTeams && sportTeams.length > 0) {
+                const ids = sportTeams.map(t => t.id);
+                // Delete availability, then matches, then teams
+                await supabase.from('availability').delete().in('team_id', ids);
+            }
+            await supabase.from('matches').delete().eq('sport', sport);
+            const { error } = await supabase.from('teams').delete().eq('sport', sport);
+            if (error) throw error;
+
+            setTeams([]);
+            setMatches([]);
+        } catch (error) {
+            console.error('Error clearing data:', error);
+            alert('Error al limpiar los datos: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const deleteTeam = async (teamId) => {
         try {
             await supabase.from('availability').delete().eq('team_id', teamId);
@@ -725,6 +753,7 @@ export const DataProvider = ({ children }) => {
         registerWalkover,
         importPlayers,
         deleteTeam,
+        clearAllData,
         createSchedule,
         generateDemoData,
         loading,
