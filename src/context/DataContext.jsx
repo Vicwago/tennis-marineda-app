@@ -37,6 +37,21 @@ const generateSlots = (sport, category) => {
     return slots;
 };
 
+// ─── Puntuación por deporte ────────────────────────────────────────────────
+// Ambos deportes: victoria=4 · derrota=0 (+1 si ganó algún set) · WO ganado=4
+// Pádel extra: WO perdido con aviso >48h=0 · sin aviso=-1
+// Tenis extra:  WO perdido=0 siempre
+const computePoints = (matchesData, teamId, sportName) => {
+    const played = matchesData.filter(m => m.completed && (m.team1_id === teamId || m.team2_id === teamId));
+    return played.reduce((acc, m) => {
+        const isWin = m.winner_id === teamId;
+        const isWO  = m.score === 'W.O.';
+        if (isWin)  return acc + 4;                                           // victoria (todos los deportes)
+        if (isWO)   return acc + (sportName === 'padel' && !m.wo_notified ? -1 : 0); // WO perdido
+        return acc + (m.loser_won_set ? 1 : 0);                               // derrota normal (+1 si ganó set)
+    }, 0);
+};
+
 export const DataProvider = ({ children }) => {
     const { sport, tennisCategory } = useGame();
     const { user } = useAuth();
@@ -92,20 +107,15 @@ export const DataProvider = ({ children }) => {
                 if (matchesResult.error) throw matchesResult.error;
                 if (courtsResult.error)  throw courtsResult.error;
 
-                // Calcular puntos dinámicamente desde los partidos completados
-                // Ganador: 3 pts · Perdedor: 1 pt · WO ganador: 3 pts · WO perdedor: 0 pts
+                // Calcular puntos dinámicamente desde partidos completados (sport-aware)
                 const matchesData = matchesResult.data;
                 setTeams(teamsResult.data.map(t => {
-                    const teamMatches = matchesData.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
-                    const wins = teamMatches.filter(m => m.winner_id === t.id && m.score !== 'W.O.').length;
-                    const losses = teamMatches.filter(m => m.winner_id !== t.id && m.score !== 'W.O.').length;
-                    const woWins = teamMatches.filter(m => m.winner_id === t.id && m.score === 'W.O.').length;
-                    const computedPoints = (wins * 3) + (losses * 1) + (woWins * 3);
+                    const played = matchesData.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
                     return {
                         ...t,
                         group: t.group_name,
-                        matchesPlayed: teamMatches.length,
-                        points: computedPoints,
+                        matchesPlayed: played.length,
+                        points: computePoints(matchesData, t.id, sport),
                         week_off: t.week_off || false,
                         availability: Array.isArray(t.availability)
                             ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
@@ -182,92 +192,53 @@ export const DataProvider = ({ children }) => {
         }
     }, [sport, tennisCategory]);
 
-    const saveMatchResult = async (matchId, score, winnerId) => {
+    // loserWonSet: +1 pt al perdedor si ganó algún set (aplica a ambos deportes)
+    const saveMatchResult = async (matchId, score, winnerId, loserWonSet = false) => {
         try {
+            const winnerPts = 4;
+            const loserPts  = loserWonSet ? 1 : 0;
+
             // 1. Update Match
             const { error: matchError } = await supabase
                 .from('matches')
-                .update({ completed: true, score, winner_id: winnerId, played: true })
+                .update({ completed: true, score, winner_id: winnerId, played: true, loser_won_set: loserWonSet })
                 .eq('id', matchId)
-                .select(); // Select to ensure we have the latest state if needed
+                .select();
 
             if (matchError) throw matchError;
 
-            // 2. Calculate Points (Win=3, Loss=1)
+            // 2. Update teams.points en BD (para consistencia, aunque calculamos dinámicamente en frontend)
             const match = matches.find(m => m.id === matchId);
-            if (!match) return; // Should not happen
+            if (!match) return;
 
             const winner = match.t1.id === winnerId ? match.t1 : match.t2;
-            const loser = match.t1.id === winnerId ? match.t2 : match.t1;
+            const loser  = match.t1.id === winnerId ? match.t2 : match.t1;
 
-            // Update Winner
-            const { error: winnerError } = await supabase.rpc('increment_points', {
-                row_id: winner.id,
-                points_to_add: 3,
-                matches_to_add: 1
-            });
+            const { data: teamsData } = await supabase.from('teams').select('id, points, matches_played').in('id', [winner.id, loser.id]);
+            const winnerTeam = teamsData?.find(t => t.id === winner.id);
+            const loserTeam  = teamsData?.find(t => t.id === loser.id);
+            if (winnerTeam) await supabase.from('teams').update({ points: winnerTeam.points + winnerPts, matches_played: winnerTeam.matches_played + 1 }).eq('id', winner.id);
+            if (loserTeam)  await supabase.from('teams').update({ points: loserTeam.points + loserPts,  matches_played: loserTeam.matches_played + 1 }).eq('id', loser.id);
 
-            // Update Loser
-            const { error: loserError } = await supabase.rpc('increment_points', {
-                row_id: loser.id,
-                points_to_add: 1,
-                matches_to_add: 1
-            });
-
-            // Fallback if RPC fails or doesn't exist (Manual update - less safe for concurrency but works for demo)
-            if (winnerError || loserError) {
-                console.warn("RPC 'increment_points' failed, falling back to manual update", winnerError || loserError);
-
-                // Fetch current stats
-                const { data: teamsData } = await supabase.from('teams').select('id, points, matches_played').in('id', [winner.id, loser.id]);
-                const winnerTeam = teamsData.find(t => t.id === winner.id);
-                const loserTeam = teamsData.find(t => t.id === loser.id);
-
-                if (winnerTeam) {
-                    await supabase.from('teams').update({ points: winnerTeam.points + 3, matches_played: winnerTeam.matches_played + 1 }).eq('id', winner.id);
-                }
-                if (loserTeam) {
-                    await supabase.from('teams').update({ points: loserTeam.points + 1, matches_played: loserTeam.matches_played + 1 }).eq('id', loser.id);
-                }
-            }
-
-            // 3. Update Local State
-            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, completed: true, score, winner_id: winnerId } : m));
+            // 3. Update Local State (optimista)
+            const updatedMatch = { completed: true, score, winner_id: winnerId, loser_won_set: loserWonSet };
+            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, ...updatedMatch } : m));
             setTeams(prev => prev.map(t => {
-                if (t.id === winner.id) return { ...t, points: t.points + 3, matchesPlayed: (t.matchesPlayed || 0) + 1 };
-                if (t.id === loser.id) return { ...t, points: t.points + 1, matchesPlayed: (t.matchesPlayed || 0) + 1 };
+                if (t.id === winner.id) return { ...t, points: t.points + winnerPts, matchesPlayed: (t.matchesPlayed || 0) + 1 };
+                if (t.id === loser.id)  return { ...t, points: t.points + loserPts,  matchesPlayed: (t.matchesPlayed || 0) + 1 };
                 return t;
             }));
 
-            // --- Notificaciones de resultado ---
+            // 4. Notificaciones
             try {
                 const notifInserts = [];
                 const resultBase = `${match.t1.name} vs ${match.t2.name} — ${score}`;
-                if (match.t1.user_id) {
-                    const isWin = match.t1.id === winner.id;
-                    notifInserts.push({
-                        user_id: match.t1.user_id,
-                        match_id: matchId,
-                        type: 'result_saved',
-                        message: isWin
-                            ? `🏆 ¡Ganado! ${resultBase}. +3 puntos.`
-                            : `📊 Partido terminado: ${resultBase}. +1 punto.`
-                    });
-                }
-                if (match.t2.user_id) {
-                    const isWin = match.t2.id === winner.id;
-                    notifInserts.push({
-                        user_id: match.t2.user_id,
-                        match_id: matchId,
-                        type: 'result_saved',
-                        message: isWin
-                            ? `🏆 ¡Ganado! ${resultBase}. +3 puntos.`
-                            : `📊 Partido terminado: ${resultBase}. +1 punto.`
-                    });
-                }
-                if (notifInserts.length > 0) {
-                    await supabase.from('notifications').insert(notifInserts);
-                }
+                const loserMsg = sport === 'padel'
+                    ? `📊 Partido terminado: ${resultBase}. +${loserPts} punto${loserPts !== 1 ? 's' : ''}.`
+                    : `📊 Partido terminado: ${resultBase}. +${loserPts} punto.`;
+                if (match.t1.user_id) notifInserts.push({ user_id: match.t1.user_id, match_id: matchId, type: 'result_saved', message: match.t1.id === winner.id ? `🏆 ¡Ganado! ${resultBase}. +${winnerPts} puntos.` : loserMsg });
+                if (match.t2.user_id) notifInserts.push({ user_id: match.t2.user_id, match_id: matchId, type: 'result_saved', message: match.t2.id === winner.id ? `🏆 ¡Ganado! ${resultBase}. +${winnerPts} puntos.` : loserMsg });
+                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
             } catch (notifErr) {
                 console.warn('No se pudieron enviar notificaciones de resultado:', notifErr);
             }
@@ -294,70 +265,50 @@ export const DataProvider = ({ children }) => {
         }
     };
 
-    const registerWalkover = async (matchId, winnerId) => {
+    // notified: el ausente avisó con >48h → pádel: 0 pts / sin aviso → pádel: -1 pt · tenis: siempre 0
+    const registerWalkover = async (matchId, winnerId, notified = false) => {
         try {
+            const winnerPts = 4;
+            const loserPts  = sport === 'padel' ? (notified ? 0 : -1) : 0;
+
             // 1. Update Match
             const { error: matchError } = await supabase
                 .from('matches')
-                .update({ completed: true, score: 'W.O.', winner_id: winnerId, played: true })
+                .update({ completed: true, score: 'W.O.', winner_id: winnerId, played: true, wo_notified: notified })
                 .eq('id', matchId)
                 .select();
 
             if (matchError) throw matchError;
 
-            // 2. Calculate Points (Win=3, Loss=0 for WO)
             const match = matches.find(m => m.id === matchId);
             if (!match) return;
 
             const winner = match.t1.id === winnerId ? match.t1 : match.t2;
-            // Loser gets 0 points in WO, so we only update the winner
+            const loser  = match.t1.id === winner.id ? match.t2 : match.t1;
 
-            // Update Winner
-            const { error: winnerError } = await supabase.rpc('increment_points', {
-                row_id: winner.id,
-                points_to_add: 3,
-                matches_to_add: 1
-            });
-
-            // Fallback
-            if (winnerError) {
-                console.warn("RPC failed", winnerError);
-                const { data: teamsData } = await supabase.from('teams').select('id, points, matches_played').eq('id', winner.id).single();
-                if (teamsData) {
-                    await supabase.from('teams').update({ points: teamsData.points + 3, matches_played: teamsData.matches_played + 1 }).eq('id', winner.id);
-                }
-            }
+            // 2. Update BD (winner + loser si padel con penalización)
+            const { data: teamsData } = await supabase.from('teams').select('id, points, matches_played').in('id', [winner.id, loser.id]);
+            const winnerTeam = teamsData?.find(t => t.id === winner.id);
+            const loserTeam  = teamsData?.find(t => t.id === loser.id);
+            if (winnerTeam) await supabase.from('teams').update({ points: winnerTeam.points + winnerPts, matches_played: winnerTeam.matches_played + 1 }).eq('id', winner.id);
+            if (loserTeam && loserPts !== 0) await supabase.from('teams').update({ points: loserTeam.points + loserPts, matches_played: loserTeam.matches_played + 1 }).eq('id', loser.id);
+            else if (loserTeam) await supabase.from('teams').update({ matches_played: loserTeam.matches_played + 1 }).eq('id', loser.id);
 
             // 3. Update Local State
-            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, completed: true, score: 'W.O.', winner_id: winnerId } : m));
+            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, completed: true, score: 'W.O.', winner_id: winnerId, wo_notified: notified } : m));
             setTeams(prev => prev.map(t => {
-                if (t.id === winner.id) return { ...t, points: t.points + 3, matchesPlayed: (t.matchesPlayed || 0) + 1 };
+                if (t.id === winner.id) return { ...t, points: t.points + winnerPts, matchesPlayed: (t.matchesPlayed || 0) + 1 };
+                if (t.id === loser.id)  return { ...t, points: t.points + loserPts,  matchesPlayed: (t.matchesPlayed || 0) + 1 };
                 return t;
             }));
 
-            // --- Notificaciones de W.O. ---
+            // 4. Notificaciones
             try {
-                const loser = match.t1.id === winner.id ? match.t2 : match.t1;
                 const notifInserts = [];
-                if (winner.user_id) {
-                    notifInserts.push({
-                        user_id: winner.user_id,
-                        match_id: matchId,
-                        type: 'result_saved',
-                        message: `🏆 Victoria por W.O.: ${winner.name} vs ${loser.name}. +3 puntos.`
-                    });
-                }
-                if (loser.user_id) {
-                    notifInserts.push({
-                        user_id: loser.user_id,
-                        match_id: matchId,
-                        type: 'result_saved',
-                        message: `📋 W.O. registrado: ${loser.name} no se presentó al partido vs ${winner.name}. +0 puntos.`
-                    });
-                }
-                if (notifInserts.length > 0) {
-                    await supabase.from('notifications').insert(notifInserts);
-                }
+                const loserPtsMsg = loserPts < 0 ? `${loserPts} punto` : loserPts === 0 ? '+0 puntos' : `+${loserPts} puntos`;
+                if (winner.user_id) notifInserts.push({ user_id: winner.user_id, match_id: matchId, type: 'result_saved', message: `🏆 Victoria por W.O.: ${winner.name} vs ${loser.name}. +${winnerPts} puntos.` });
+                if (loser.user_id)  notifInserts.push({ user_id: loser.user_id,  match_id: matchId, type: 'result_saved', message: `📋 W.O. registrado: ${loser.name} no se presentó vs ${winner.name}. ${loserPtsMsg}.` });
+                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
             } catch (notifErr) {
                 console.warn('No se pudieron enviar notificaciones de W.O.:', notifErr);
             }
@@ -599,22 +550,16 @@ export const DataProvider = ({ children }) => {
             const { data: teamsData, error: fetchError } = await refreshQuery;
             if (fetchError) throw fetchError;
 
-            const processedTeams = teamsData.map(t => {
-                const teamMatches = matches.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
-                const wins = teamMatches.filter(m => m.winner_id === t.id && m.score !== 'W.O.').length;
-                const losses = teamMatches.filter(m => m.winner_id !== t.id && m.score !== 'W.O.').length;
-                const woWins = teamMatches.filter(m => m.winner_id === t.id && m.score === 'W.O.').length;
-                return {
-                    ...t,
-                    group: t.group_name,
-                    matchesPlayed: teamMatches.length,
-                    points: (wins * 3) + (losses * 1) + (woWins * 3),
-                    week_off: t.week_off || false,
-                    availability: Array.isArray(t.availability)
-                        ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
-                        : []
-                };
-            });
+            const processedTeams = teamsData.map(t => ({
+                ...t,
+                group: t.group_name,
+                matchesPlayed: matches.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id)).length,
+                points: computePoints(matches, t.id, sport),
+                week_off: t.week_off || false,
+                availability: Array.isArray(t.availability)
+                    ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
+                    : []
+            }));
             setTeams(processedTeams);
 
         } catch (error) {
@@ -733,22 +678,16 @@ export const DataProvider = ({ children }) => {
             const { data: teamsData, error: fetchError } = await refreshQuery;
             if (fetchError) throw fetchError;
 
-            const processedTeams = teamsData.map(t => {
-                const teamMatches = matches.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
-                const wins = teamMatches.filter(m => m.winner_id === t.id && m.score !== 'W.O.').length;
-                const losses = teamMatches.filter(m => m.winner_id !== t.id && m.score !== 'W.O.').length;
-                const woWins = teamMatches.filter(m => m.winner_id === t.id && m.score === 'W.O.').length;
-                return {
-                    ...t,
-                    group: t.group_name,
-                    matchesPlayed: teamMatches.length,
-                    points: (wins * 3) + (losses * 1) + (woWins * 3),
-                    week_off: t.week_off || false,
-                    availability: Array.isArray(t.availability)
-                        ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
-                        : []
-                };
-            });
+            const processedTeams = teamsData.map(t => ({
+                ...t,
+                group: t.group_name,
+                matchesPlayed: matches.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id)).length,
+                points: computePoints(matches, t.id, sport),
+                week_off: t.week_off || false,
+                availability: Array.isArray(t.availability)
+                    ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
+                    : []
+            }));
             setTeams(processedTeams);
 
             alert(`Importación completada: ${insertedTeams.length} jugadores añadidos.`);

@@ -734,10 +734,16 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                                                     <option value={match.t1.id}>{match.t1.name}</option>
                                                     <option value={match.t2.id}>{match.t2.name}</option>
                                                 </select>
+                                                {/* Checkbox "¿el perdedor ganó algún set?" — aplica a ambos deportes */}
+                                                <label className="flex items-center gap-1 text-[10px] cursor-pointer select-none" style={{ color: 'var(--text-3)' }}>
+                                                    <input type="checkbox" id={`loser-set-${match.id}`} className="w-3 h-3 accent-cyan-400" />
+                                                    <span>Perdedor ganó set</span>
+                                                </label>
                                                 <Button size="sm" onClick={() => {
                                                     const score = document.getElementById(`score-${match.id}`).value;
                                                     const winner = document.getElementById(`winner-${match.id}`).value;
-                                                    if (score && winner) submitResult(match.id, score, winner);
+                                                    const loserWonSet = document.getElementById(`loser-set-${match.id}`)?.checked || false;
+                                                    if (score && winner) submitResult(match.id, score, winner, loserWonSet);
                                                 }}>OK</Button>
 
                                                 <div className="w-px h-6 mx-1" style={{ background: 'var(--border)' }}></div>
@@ -1326,9 +1332,9 @@ export default function Dashboard({ onNavigate, currentPath }) {
         setActiveTab('schedule');
     }, [isAdmin, teams, matches, courtAvailability, createSchedule, isTennis]);
 
-    const submitResultHandler = useCallback((matchId, score, winnerId) => {
+    const submitResultHandler = useCallback((matchId, score, winnerId, loserWonSet = false) => {
         if (!isAdmin) return;
-        saveMatchResult(matchId, score, winnerId);
+        saveMatchResult(matchId, score, winnerId, loserWonSet);
     }, [isAdmin, saveMatchResult]);
 
     const postponeMatchHandler = useCallback((matchId) => {
@@ -1340,10 +1346,16 @@ export default function Dashboard({ onNavigate, currentPath }) {
 
     const registerWalkoverHandler = useCallback((matchId, winnerId) => {
         if (!isAdmin) return;
-        if (confirm("¿Confirmar victoria por W.O. (Walkover)?\nEl ganador recibirá 3 puntos y el perdedor 0.")) {
-            registerWalkover(matchId, winnerId);
+        const sportLabel = isTennis ? 'tenis' : 'pádel';
+        const notified = isTennis
+            ? false // en tenis no hay distinción de aviso en puntos
+            : confirm(`¿El jugador/pareja ausente avisó con más de 48 h de antelación?\n\n• SÍ → 0 puntos (${sportLabel})\n• NO → -1 punto penalización`);
+        const loserPtsMsg = isTennis ? '0 puntos' : (notified ? '+0 puntos' : '-1 punto (sin aviso)');
+        const winnerPtsMsg = '+4 puntos';
+        if (confirm(`¿Confirmar W.O.?\nGanador: ${winnerPtsMsg} · Perdedor: ${loserPtsMsg}`)) {
+            registerWalkover(matchId, winnerId, notified);
         }
-    }, [isAdmin, registerWalkover]);
+    }, [isAdmin, isTennis, registerWalkover]);
 
     const renderContent = () => {
         if (!sport) {
