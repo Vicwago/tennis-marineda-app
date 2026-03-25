@@ -92,15 +92,26 @@ export const DataProvider = ({ children }) => {
                 if (matchesResult.error) throw matchesResult.error;
                 if (courtsResult.error)  throw courtsResult.error;
 
-                setTeams(teamsResult.data.map(t => ({
-                    ...t,
-                    group: t.group_name,
-                    matchesPlayed: t.matches_played || 0,
-                    week_off: t.week_off || false,
-                    availability: Array.isArray(t.availability)
-                        ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
-                        : []
-                })));
+                // Calcular puntos dinámicamente desde los partidos completados
+                // Ganador: 3 pts · Perdedor: 1 pt · WO ganador: 3 pts · WO perdedor: 0 pts
+                const matchesData = matchesResult.data;
+                setTeams(teamsResult.data.map(t => {
+                    const teamMatches = matchesData.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
+                    const wins = teamMatches.filter(m => m.winner_id === t.id && m.score !== 'W.O.').length;
+                    const losses = teamMatches.filter(m => m.winner_id !== t.id && m.score !== 'W.O.').length;
+                    const woWins = teamMatches.filter(m => m.winner_id === t.id && m.score === 'W.O.').length;
+                    const computedPoints = (wins * 3) + (losses * 1) + (woWins * 3);
+                    return {
+                        ...t,
+                        group: t.group_name,
+                        matchesPlayed: teamMatches.length,
+                        points: computedPoints,
+                        week_off: t.week_off || false,
+                        availability: Array.isArray(t.availability)
+                            ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
+                            : []
+                    };
+                }));
 
                 setMatches(matchesResult.data.map(m => ({
                     ...m,
@@ -588,13 +599,22 @@ export const DataProvider = ({ children }) => {
             const { data: teamsData, error: fetchError } = await refreshQuery;
             if (fetchError) throw fetchError;
 
-            const processedTeams = teamsData.map(t => ({
-                ...t,
-                group: t.group_name,
-                availability: Array.isArray(t.availability)
-                    ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
-                    : []
-            }));
+            const processedTeams = teamsData.map(t => {
+                const teamMatches = matches.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
+                const wins = teamMatches.filter(m => m.winner_id === t.id && m.score !== 'W.O.').length;
+                const losses = teamMatches.filter(m => m.winner_id !== t.id && m.score !== 'W.O.').length;
+                const woWins = teamMatches.filter(m => m.winner_id === t.id && m.score === 'W.O.').length;
+                return {
+                    ...t,
+                    group: t.group_name,
+                    matchesPlayed: teamMatches.length,
+                    points: (wins * 3) + (losses * 1) + (woWins * 3),
+                    week_off: t.week_off || false,
+                    availability: Array.isArray(t.availability)
+                        ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
+                        : []
+                };
+            });
             setTeams(processedTeams);
 
         } catch (error) {
@@ -713,13 +733,22 @@ export const DataProvider = ({ children }) => {
             const { data: teamsData, error: fetchError } = await refreshQuery;
             if (fetchError) throw fetchError;
 
-            const processedTeams = teamsData.map(t => ({
-                ...t,
-                group: t.group_name,
-                availability: Array.isArray(t.availability)
-                    ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
-                    : []
-            }));
+            const processedTeams = teamsData.map(t => {
+                const teamMatches = matches.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
+                const wins = teamMatches.filter(m => m.winner_id === t.id && m.score !== 'W.O.').length;
+                const losses = teamMatches.filter(m => m.winner_id !== t.id && m.score !== 'W.O.').length;
+                const woWins = teamMatches.filter(m => m.winner_id === t.id && m.score === 'W.O.').length;
+                return {
+                    ...t,
+                    group: t.group_name,
+                    matchesPlayed: teamMatches.length,
+                    points: (wins * 3) + (losses * 1) + (woWins * 3),
+                    week_off: t.week_off || false,
+                    availability: Array.isArray(t.availability)
+                        ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
+                        : []
+                };
+            });
             setTeams(processedTeams);
 
             alert(`Importación completada: ${insertedTeams.length} jugadores añadidos.`);
