@@ -429,6 +429,14 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                         )}
                     </Card>
                 ))}
+                {filteredTeams.length === 0 && (
+                    <div className="col-span-full text-center py-12" style={{ color: 'var(--text-3)' }}>
+                        {teams.length === 0
+                            ? <p>No hay jugadores registrados aún.</p>
+                            : <p>No hay jugadores en el grupo seleccionado.</p>
+                        }
+                    </div>
+                )}
             </div>
         </div>
     );

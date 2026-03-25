@@ -37,7 +37,12 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,svg,woff2}'],
+        // Solo cachear iconos/imágenes estáticas — el JS/CSS siempre desde red
+        // Esto evita que el service worker sirva código desactualizado
+        globPatterns: ['**/*.{ico,svg,png,woff2}'],
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
