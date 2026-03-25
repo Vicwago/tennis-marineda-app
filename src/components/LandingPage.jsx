@@ -30,7 +30,7 @@ export default function LandingPage() {
                 <div className="w-28 h-28 mx-auto mb-6 rounded-2xl p-2 shadow-xl"
                     style={{ background: 'linear-gradient(135deg, rgba(229,57,53,0.15), rgba(0,212,255,0.08))', border: '1px solid rgba(229,57,53,0.25)' }}>
                     <img
-                        src="/src/assets/logo.png"
+                        src="/logo.png"
                         alt="Escuela de Tenis Marineda"
                         className="w-full h-full object-contain"
                     />
