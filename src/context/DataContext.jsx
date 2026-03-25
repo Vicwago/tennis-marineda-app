@@ -45,9 +45,7 @@ export const DataProvider = ({ children }) => {
     const [teams, setTeams] = useState([]);
     const [matches, setMatches] = useState([]);
     const [courts, setCourts] = useState({});
-
-    // Helper to get the "Reset Time" from local storage
-    const getResetTime = () => localStorage.getItem('demo_data_reset_time');
+    const [appSettings, setAppSettings] = useState({ availability_locked: false, availability_deadline_label: '' });
 
     // ⚡ Declarado ANTES de los useCallback que lo usan como dependencia
     const currentSlots = useMemo(() => generateSlots(sport, tennisCategory), [sport, tennisCategory]);
@@ -61,8 +59,6 @@ export const DataProvider = ({ children }) => {
         const fetchData = async () => {
             setLoading(true);
             try {
-                const resetTime = getResetTime();
-
                 // Construir las 3 queries
                 let teamsQuery = supabase
                     .from('teams')
@@ -85,11 +81,6 @@ export const DataProvider = ({ children }) => {
                     courtsQuery  = courtsQuery.eq('category', tennisCategory);
                 }
 
-                if (resetTime) {
-                    teamsQuery   = teamsQuery.gt('created_at', resetTime);
-                    matchesQuery = matchesQuery.gt('created_at', resetTime);
-                }
-
                 // ⚡ Ejecutar las 3 queries EN PARALELO (antes: secuencial ~1.5s → ahora ~0.5s)
                 const [teamsResult, matchesResult, courtsResult] = await Promise.all([
                     teamsQuery,
@@ -105,6 +96,7 @@ export const DataProvider = ({ children }) => {
                     ...t,
                     group: t.group_name,
                     matchesPlayed: t.matches_played || 0,
+                    week_off: t.week_off || false,
                     availability: Array.isArray(t.availability)
                         ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
                         : []
@@ -120,6 +112,17 @@ export const DataProvider = ({ children }) => {
                 const courtsMap = {};
                 courtsResult.data.forEach(c => { courtsMap[c.slot_id] = c.available_count; });
                 setCourts(courtsMap);
+
+                // Cargar app_settings
+                const { data: settingsData } = await supabase.from('app_settings').select('*');
+                if (settingsData) {
+                    const s = {};
+                    settingsData.forEach(row => { s[row.key] = row.value; });
+                    setAppSettings({
+                        availability_locked: s.availability_locked === 'true',
+                        availability_deadline_label: s.availability_deadline_label || ''
+                    });
+                }
 
             } catch (error) {
                 console.error('Error fetching data:', error);
@@ -438,13 +441,6 @@ export const DataProvider = ({ children }) => {
                 return;
             }
 
-            // SOFT RESET: Set a timestamp to filter out old data
-            const now = new Date();
-            // Subtract a few seconds to be safe
-            now.setSeconds(now.getSeconds() - 1);
-            const resetTime = now.toISOString();
-            localStorage.setItem('demo_data_reset_time', resetTime);
-
             alert(`PASO 2: Generando jugadores...`);
 
             // --- EXPANDED DATA POOLS ---
@@ -589,9 +585,6 @@ export const DataProvider = ({ children }) => {
                 refreshQuery = refreshQuery.eq('category', tennisCategory);
             }
 
-            // Apply filter to refresh query too
-            refreshQuery = refreshQuery.gt('created_at', resetTime);
-
             const { data: teamsData, error: fetchError } = await refreshQuery;
             if (fetchError) throw fetchError;
 
@@ -675,25 +668,30 @@ export const DataProvider = ({ children }) => {
             // 2. Process Availability
             const availabilityInserts = [];
 
-            // Helper to map "Lunes 10:00" to "lun_10:00"
-            const dayMap = { 'lunes': 'lun', 'martes': 'mar', 'miércoles': 'mié', 'miercoles': 'mié', 'jueves': 'jue', 'viernes': 'vie', 'sábado': 'sáb', 'sabado': 'sáb', 'domingo': 'dom' };
+            // Map normalizado de días (con y sin tilde)
+            const dayNormMap = {
+                'lunes': 'Lunes', 'martes': 'Martes',
+                'miércoles': 'Miércoles', 'miercoles': 'Miércoles', 'miércoles': 'Miércoles',
+                'jueves': 'Jueves', 'viernes': 'Viernes',
+                'sábado': 'Sábado', 'sabado': 'Sábado',
+                'domingo': 'Domingo'
+            };
 
             insertedTeams.forEach((team, index) => {
                 const rawAvailability = playersData[index].availability; // "Lunes 10:00, Martes 12:00"
                 if (rawAvailability) {
                     const slots = rawAvailability.split(',').map(s => s.trim());
                     slots.forEach(slotStr => {
-                        // Expected format: "Day Hour" (e.g. "Lunes 10:00")
-                        const parts = slotStr.split(' ');
+                        const parts = slotStr.trim().split(/\s+/);
                         if (parts.length >= 2) {
-                            const dayName = parts[0].toLowerCase();
+                            const dayKey = parts[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                            const dayNormKey = parts[0].toLowerCase();
                             const hour = parts[1];
-                            const shortDay = dayMap[dayName];
-
-                            if (shortDay) {
+                            const normalizedDay = dayNormMap[dayNormKey] || dayNormMap[dayKey];
+                            if (normalizedDay) {
                                 availabilityInserts.push({
                                     team_id: team.id,
-                                    day: parts[0], // Keep original case/spelling for display if needed, or normalize
+                                    day: normalizedDay,
                                     hour: hour
                                 });
                             }
@@ -709,10 +707,8 @@ export const DataProvider = ({ children }) => {
 
             // 3. Refresh Data
             // Re-fetch to update UI
-            const resetTime = getResetTime();
             let refreshQuery = supabase.from('teams').select(`*, availability (day, hour)`).eq('sport', sport);
             if (sport === 'tennis') refreshQuery = refreshQuery.eq('category', tennisCategory);
-            if (resetTime) refreshQuery = refreshQuery.gt('created_at', resetTime);
 
             const { data: teamsData, error: fetchError } = await refreshQuery;
             if (fetchError) throw fetchError;
@@ -742,12 +738,34 @@ export const DataProvider = ({ children }) => {
         }
     };
 
+    const updateWeekOff = useCallback(async (teamId, weekOff) => {
+        try {
+            const { error } = await supabase.from('teams').update({ week_off: weekOff }).eq('id', teamId);
+            if (error) throw error;
+            setTeams(prev => prev.map(t => t.id === teamId ? { ...t, week_off: weekOff } : t));
+        } catch (error) {
+            console.error('Error updating week_off:', error);
+        }
+    }, []);
+
+    const updateAppSettings = useCallback(async (key, value) => {
+        try {
+            await supabase.from('app_settings').upsert({ key, value: String(value), updated_at: new Date().toISOString() });
+            setAppSettings(prev => ({ ...prev, [key]: key === 'availability_locked' ? value === true || value === 'true' : value }));
+        } catch (error) {
+            console.error('Error updating app settings:', error);
+        }
+    }, []);
+
     // ⚡ Memoizado: los consumidores solo re-renderizan cuando los datos realmente cambian
     const value = useMemo(() => ({
         data: { teams, matches, courts },
+        appSettings,
         updateData,
         updateTeamAvailability,
         updateCourtCount,
+        updateWeekOff,
+        updateAppSettings,
         saveMatchResult,
         postponeMatch,
         registerWalkover,
@@ -758,7 +776,7 @@ export const DataProvider = ({ children }) => {
         generateDemoData,
         loading,
         currentSlots
-    }), [teams, matches, courts, loading, currentSlots, updateTeamAvailability, updateCourtCount]);
+    }), [teams, matches, courts, appSettings, loading, currentSlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateAppSettings]);
 
     return (
         <DataContext.Provider value={value}>

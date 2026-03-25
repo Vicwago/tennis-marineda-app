@@ -139,6 +139,14 @@ export default function Login({ onNavigateToRegister }) {
                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>
                         Escuela de Tenis Marineda &copy; {new Date().getFullYear()}
                     </p>
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+                        App desarrollada por{' '}
+                        <a href="https://norteia.es" target="_blank" rel="noopener noreferrer"
+                            className="font-bold transition-opacity hover:opacity-80"
+                            style={{ color: '#76c1ff' }}>
+                            Víctor Mago · NorteIA
+                        </a>
+                    </p>
                 </div>
             </div>
         </div>

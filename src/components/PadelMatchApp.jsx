@@ -264,7 +264,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onClearAll }) => {
+const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onClearAll }) => {
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
@@ -280,7 +280,7 @@ const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, set
                     <div className="p-2 rounded-lg" style={{ background: 'rgba(255,193,7,0.1)', color: '#FFC107' }}>
                         <Users size={24} />
                     </div>
-                    <h2 className="font-bold text-xl text-white">Parejas / Jugadores</h2>
+                    <h2 className="font-bold text-xl text-white">{isTennis ? 'Jugadores' : 'Parejas'}</h2>
                 </div>
 
                 <div className="flex gap-3 w-full md:w-auto">
@@ -437,14 +437,15 @@ const TeamsView = memo(({ teams, isAdmin, setShowImportModal, editingTeamId, set
     );
 });
 
-const MyAvailabilityView = memo(({ teams, currentSlots }) => {
-    const { updateTeamAvailability } = useData();
+const MyAvailabilityView = memo(({ teams, currentSlots, sport }) => {
+    const { updateTeamAvailability, updateWeekOff, appSettings } = useData();
     const { user } = useAuth();
     const [myTeamId, setMyTeamId] = useState(localStorage.getItem('myTeamId') || '');
     const [selectedAvailability, setSelectedAvailability] = useState([]);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const isLocked = appSettings?.availability_locked;
+    const deadlineLabel = appSettings?.availability_deadline_label;
 
-    // Auto-identificación: si el usuario tiene equipo vinculado, lo detectamos automáticamente
     useEffect(() => {
         if (user?.id && !myTeamId && teams.length > 0) {
             const linkedTeam = teams.find(t => t.user_id === user.id);
@@ -457,19 +458,13 @@ const MyAvailabilityView = memo(({ teams, currentSlots }) => {
         }
     }, [user?.id, teams, myTeamId]);
 
-    // Load availability when team is selected
     useEffect(() => {
         if (myTeamId) {
             const team = teams.find(t => t.id === parseInt(myTeamId));
-            if (team) {
-                // Only update from source if we don't have unsaved changes or if we just switched teams
-                if (!hasUnsavedChanges) {
-                    const newAvail = team.availability || [];
-                    // Avoid infinite loop by checking if value actually changed
-                    if (JSON.stringify(selectedAvailability) !== JSON.stringify(newAvail)) {
-                        // eslint-disable-next-line
-                        setSelectedAvailability(newAvail);
-                    }
+            if (team && !hasUnsavedChanges) {
+                const newAvail = team.availability || [];
+                if (JSON.stringify(selectedAvailability) !== JSON.stringify(newAvail)) {
+                    setSelectedAvailability(newAvail);
                 }
             }
         }
@@ -484,19 +479,21 @@ const MyAvailabilityView = memo(({ teams, currentSlots }) => {
     };
 
     const toggleSlot = (slotId) => {
+        if (isLocked) return;
         setHasUnsavedChanges(true);
-        if (selectedAvailability.includes(slotId)) {
-            setSelectedAvailability(prev => prev.filter(id => id !== slotId));
-        } else {
-            setSelectedAvailability(prev => [...prev, slotId]);
-        }
+        setSelectedAvailability(prev => prev.includes(slotId) ? prev.filter(id => id !== slotId) : [...prev, slotId]);
     };
 
     const save = () => {
-        if (!myTeamId) return;
+        if (!myTeamId || isLocked) return;
         updateTeamAvailability(parseInt(myTeamId), selectedAvailability);
         setHasUnsavedChanges(false);
         alert('¡Disponibilidad guardada correctamente!');
+    };
+
+    const handleWeekOff = (val) => {
+        if (!myTeamId || isLocked) return;
+        updateWeekOff(parseInt(myTeamId), val);
     };
 
     if (!myTeamId) {
@@ -507,19 +504,13 @@ const MyAvailabilityView = memo(({ teams, currentSlots }) => {
                 </div>
                 <h2 className="text-xl font-bold text-white mb-2">Identifícate</h2>
                 <p className="mb-4" style={{ color: 'var(--text-2)' }}>Para gestionar tu disponibilidad, primero dinos quién eres.</p>
-
                 {user && teams.length === 0 && (
                     <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ color: 'var(--cyan)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
-                        Tu equipo está registrado en otro deporte. Navega al deporte correcto desde el menú lateral.
+                        Tu perfil está registrado en otro deporte. Navega al deporte correcto desde el menú lateral.
                     </p>
                 )}
-
                 {teams.length > 0 && (
-                    <select
-                        value={myTeamId}
-                        onChange={handleTeamChange}
-                        className="cyber-input w-full p-3 rounded-xl"
-                    >
+                    <select value={myTeamId} onChange={handleTeamChange} className="cyber-input w-full p-3 rounded-xl">
                         <option value="">Selecciona tu nombre...</option>
                         {teams.sort((a, b) => a.name.localeCompare(b.name)).map(t => (
                             <option key={t.id} value={t.id}>{t.name}</option>
@@ -533,75 +524,165 @@ const MyAvailabilityView = memo(({ teams, currentSlots }) => {
     const team = teams.find(t => t.id === parseInt(myTeamId));
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            <div className="p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-lg" style={{ background: 'linear-gradient(135deg, rgba(229,57,53,0.8), rgba(229,57,53,0.5))', border: '1px solid rgba(229,57,53,0.4)' }}>
-                        {team?.name.substring(0, 2).toUpperCase()}
-                    </div>
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+            {/* Deadline banner */}
+            {isLocked && (
+                <div className="p-4 rounded-xl flex items-center gap-3" style={{ background: 'rgba(229,57,53,0.12)', border: '1px solid rgba(229,57,53,0.4)' }}>
+                    <span style={{ color: '#ff6b6b', fontSize: 20 }}>🔒</span>
                     <div>
-                        <h2 className="text-xl font-bold text-white">Hola, <span className="text-brand-gradient">{team?.name}</span></h2>
-                        <p className="text-sm" style={{ color: 'var(--text-2)' }}>Gestiona tus horarios para esta semana.</p>
+                        <p className="font-bold text-white text-sm">Disponibilidad bloqueada</p>
+                        <p className="text-xs" style={{ color: 'var(--text-2)' }}>El plazo para modificar la disponibilidad ha cerrado. Contacta al administrador si necesitas un cambio.</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <button onClick={() => setMyTeamId('')} className="text-sm underline transition-colors" style={{ color: 'var(--text-3)' }}>Cambiar Usuario</button>
-                    {hasUnsavedChanges && (
-                        <span className="text-xs font-bold px-2 py-1 rounded-full animate-pulse" style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>Cambios sin guardar</span>
-                    )}
-                    <Button onClick={save} disabled={!hasUnsavedChanges} className={hasUnsavedChanges ? 'animate-bounce-subtle' : ''}>
-                        Guardar Disponibilidad
-                    </Button>
+            )}
+            {!isLocked && deadlineLabel && (
+                <div className="p-3 rounded-xl flex items-center gap-3" style={{ background: 'rgba(255,193,7,0.1)', border: '1px solid rgba(255,193,7,0.3)' }}>
+                    <span style={{ fontSize: 18 }}>⏰</span>
+                    <p className="text-sm" style={{ color: '#FFC107' }}>Plazo para actualizar disponibilidad: <strong>{deadlineLabel}</strong></p>
+                </div>
+            )}
+
+            {/* Header */}
+            <div className="p-4 rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 text-white rounded-xl flex items-center justify-center font-bold text-sm shadow-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, rgba(229,57,53,0.8), rgba(229,57,53,0.5))', border: '1px solid rgba(229,57,53,0.4)' }}>
+                            {team?.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-white">Hola, <span style={{ color: 'var(--cyan)' }}>{team?.name}</span></h2>
+                            <p className="text-xs" style={{ color: 'var(--text-2)' }}>Gestiona tus horarios para esta semana.</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <button onClick={() => setMyTeamId('')} className="text-xs underline transition-colors flex-shrink-0" style={{ color: 'var(--text-3)' }}>Cambiar</button>
+                        {hasUnsavedChanges && !isLocked && (
+                            <Button onClick={save} className="flex-1 sm:flex-none text-sm py-2">Guardar</Button>
+                        )}
+                        {!hasUnsavedChanges && !isLocked && (
+                            <span className="text-xs px-2 py-1 rounded-full" style={{ color: '#4CAF50', background: 'rgba(76,175,80,0.1)', border: '1px solid rgba(76,175,80,0.3)' }}>✓ Guardado</span>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            <div className="p-6 rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {DAYS.map(day => (
-                        <div key={day} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                            <div className="p-3 font-bold text-white text-center" style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--border)' }}>
-                                {day}
-                            </div>
-                            <div className="p-3 grid grid-cols-2 gap-2">
-                                {currentSlots.filter(s => s.day === day).map(slot => (
-                                    <button
-                                        key={slot.id}
-                                        onClick={() => toggleSlot(slot.id)}
-                                        className="text-xs py-2 px-1 rounded-lg border transition-all font-medium"
-                                        style={selectedAvailability.includes(slot.id)
-                                            ? { background: 'rgba(229,57,53,0.3)', color: 'white', border: '1px solid rgba(229,57,53,0.5)', transform: 'scale(1.05)' }
-                                            : { background: 'rgba(255,255,255,0.04)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
-                                    >
-                                        {slot.hour}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
+            {/* No puedo jugar esta semana */}
+            <div className="p-4 rounded-2xl" style={{ background: 'var(--bg-card)', border: team?.week_off ? '1px solid rgba(229,57,53,0.5)' : '1px solid var(--border)' }}>
+                <div className="flex items-center justify-between gap-4">
+                    <div>
+                        <p className="font-bold text-white text-sm">❌ Esta semana no puedo jugar</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>
+                            {team?.week_off ? 'Estás marcado como NO disponible esta semana. El algoritmo no te asignará partido.' : 'Activa esto si no puedes jugar esta semana. Se ignorará tu disponibilidad.'}
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => handleWeekOff(!team?.week_off)}
+                        disabled={isLocked}
+                        className="flex-shrink-0 w-14 h-7 rounded-full transition-all duration-300 relative"
+                        style={{
+                            background: team?.week_off ? 'rgba(229,57,53,0.8)' : 'rgba(255,255,255,0.1)',
+                            border: team?.week_off ? '1px solid rgba(229,57,53,0.8)' : '1px solid var(--border)',
+                            opacity: isLocked ? 0.5 : 1
+                        }}
+                    >
+                        <span className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300"
+                            style={{ left: team?.week_off ? '52%' : '2%' }} />
+                    </button>
                 </div>
             </div>
+
+            {/* Slots de disponibilidad */}
+            {!team?.week_off && (
+                <div className="p-4 rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                    <h3 className="font-bold text-white mb-3 text-sm">Selecciona tus horarios disponibles</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        {DAYS.map(day => (
+                            <div key={day} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                                <div className="p-2 font-bold text-white text-center text-xs" style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--border)' }}>
+                                    {day}
+                                </div>
+                                <div className="p-2 grid grid-cols-2 gap-1.5">
+                                    {currentSlots.filter(s => s.day === day).map(slot => (
+                                        <button
+                                            key={slot.id}
+                                            onClick={() => toggleSlot(slot.id)}
+                                            disabled={isLocked}
+                                            className="text-xs py-2 px-1 rounded-lg border transition-all font-medium"
+                                            style={selectedAvailability.includes(slot.id)
+                                                ? { background: 'rgba(229,57,53,0.3)', color: 'white', border: '1px solid rgba(229,57,53,0.5)' }
+                                                : { background: 'rgba(255,255,255,0.04)', color: 'var(--text-2)', border: '1px solid var(--border)', opacity: isLocked ? 0.5 : 1 }}
+                                        >
+                                            {slot.hour}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {hasUnsavedChanges && !isLocked && (
+                        <div className="mt-4 flex justify-end">
+                            <Button onClick={save}>Guardar Disponibilidad</Button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 });
 
-const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, onChatClick }) => {
+const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, onChatClick, isTennis, appSettings, updateAppSettings }) => {
     const activeMatches = useMemo(() => matches.filter(m => !m.completed), [matches]);
+    const label = isTennis ? 'jugadores' : 'parejas';
+    const [deadlineInput, setDeadlineInput] = useState(appSettings?.availability_deadline_label || '');
+    const isLocked = appSettings?.availability_locked;
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             {isAdmin && (
-                <div className="p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(229,57,53,0.15) 0%, rgba(229,57,53,0.05) 100%)', border: '1px solid rgba(229,57,53,0.3)' }}>
-                    <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" style={{ background: 'rgba(229,57,53,0.05)' }}></div>
-                    <div className="relative z-10">
-                        <h2 className="text-2xl font-bold flex items-center gap-3 mb-1 text-white"><RefreshCw style={{ color: '#FFC107' }} /> Generador de Jornada</h2>
-                        <p className="text-sm max-w-md" style={{ color: 'var(--text-2)' }}>
-                            El algoritmo cruzará automáticamente parejas con horarios compatibles y pistas disponibles, evitando repeticiones.
+                <>
+                {/* Panel configuración semanal */}
+                <div className="p-4 rounded-2xl" style={{ background: 'rgba(255,193,7,0.07)', border: '1px solid rgba(255,193,7,0.25)' }}>
+                    <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: '#FFC107' }}>⚙️ Configuración semanal</p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-1">
+                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-2)' }}>Plazo para poner disponibilidad (ej: "Miércoles 20:00")</label>
+                            <input
+                                type="text"
+                                value={deadlineInput}
+                                onChange={e => setDeadlineInput(e.target.value)}
+                                onBlur={() => updateAppSettings('availability_deadline_label', deadlineInput)}
+                                placeholder="Miércoles 20:00"
+                                className="cyber-input w-full px-3 py-2 rounded-lg text-sm"
+                            />
+                        </div>
+                        <div className="flex items-end">
+                            <button
+                                onClick={() => updateAppSettings('availability_locked', !isLocked)}
+                                className="px-4 py-2 rounded-lg text-sm font-bold transition-all w-full sm:w-auto"
+                                style={isLocked
+                                    ? { background: 'rgba(229,57,53,0.2)', border: '1px solid rgba(229,57,53,0.5)', color: '#ff6b6b' }
+                                    : { background: 'rgba(76,175,80,0.2)', border: '1px solid rgba(76,175,80,0.4)', color: '#4CAF50' }}
+                            >
+                                {isLocked ? '🔒 Disponibilidad BLOQUEADA' : '🔓 Disponibilidad ABIERTA'}
+                            </button>
+                        </div>
+                    </div>
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>Bloquea cuando quieras generar la jornada para que nadie modifique su disponibilidad.</p>
+                </div>
+
+                {/* Botón generar jornada */}
+                <div className="p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4" style={{ background: 'linear-gradient(135deg, rgba(229,57,53,0.15) 0%, rgba(229,57,53,0.05) 100%)', border: '1px solid rgba(229,57,53,0.3)' }}>
+                    <div>
+                        <h2 className="text-lg font-bold flex items-center gap-2 mb-1 text-white"><RefreshCw size={16} style={{ color: '#FFC107' }} /> Generador de Jornada</h2>
+                        <p className="text-xs" style={{ color: 'var(--text-2)' }}>
+                            Cruza {label} con horarios compatibles, respetando grupos y semana libre.
                         </p>
                     </div>
-                    <Button onClick={generateWeeklySchedule} className="bg-brand-red hover:bg-brand-dark text-white border-none shadow-lg shadow-brand-red/30 w-full md:w-auto py-3 px-6 relative z-10">
-                        Generar Nueva Jornada
+                    <Button onClick={generateWeeklySchedule} className="bg-brand-red hover:bg-brand-dark text-white border-none w-full sm:w-auto py-2.5 px-5">
+                        Generar Jornada
                     </Button>
                 </div>
+                </>
             )}
 
             {generationLog && (
@@ -1077,7 +1158,7 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, currentSlots, updateTeamAvailability, updateCourtCount, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, importPlayers, deleteTeam, clearAllData } = useData();
+    const { data, appSettings, currentSlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, importPlayers, deleteTeam, clearAllData } = useData();
     const { unreadCount } = useNotifications();
 
     // Navigation State
@@ -1099,11 +1180,15 @@ export default function Dashboard({ onNavigate, currentPath }) {
     const [showImportModal, setShowImportModal] = useState(false);
     const [importText, setImportText] = useState("");
 
+    // Toggle vista admin/jugador (solo para admins reales)
+    const [previewAsPlayer, setPreviewAsPlayer] = useState(false);
+
     // Derived Data
     const teams = data?.teams || [];
     const matches = data?.matches || [];
     const courtAvailability = data?.courts || {};
-    const isAdmin = user?.role === 'admin';
+    const isRealAdmin = user?.role === 'admin';
+    const isAdmin = isRealAdmin && !previewAsPlayer;
     const isTennis = sport === 'tennis';
 
     // Initialize Role from Auth
@@ -1199,9 +1284,11 @@ export default function Dashboard({ onNavigate, currentPath }) {
     const generateWeeklyScheduleHandler = useCallback(() => {
         if (!isAdmin) return;
         let schedule = [];
-        let availableTeams = [...teams];
+        // Excluir jugadores con week_off activo
+        let availableTeams = teams.filter(t => !t.week_off);
         let scheduledTeamIds = new Set();
         let weeklyCourts = { ...courtAvailability };
+        const noCourtsConfig = Object.keys(weeklyCourts).length === 0;
         const matchHistory = {};
         matches.forEach(m => { matchHistory[`${m.t1.id}-${m.t2.id}`] = true; matchHistory[`${m.t2.id}-${m.t1.id}`] = true; });
         let possibleMatchups = [];
@@ -1211,7 +1298,10 @@ export default function Dashboard({ onNavigate, currentPath }) {
                 const t2 = availableTeams[j];
                 if (matchHistory[`${t1.id}-${t2.id}`]) continue;
                 if (t1.group && t2.group && t1.group !== t2.group) continue;
-                const validSlots = t1.availability.filter(slot => t2.availability.includes(slot) && (weeklyCourts[slot] || 0) > 0);
+                // Si no hay configuración de pistas, ignorar restricción de pistas
+                const validSlots = t1.availability.filter(slot =>
+                    t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0)
+                );
                 if (validSlots.length > 0) {
                     possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length });
                 }
@@ -1220,22 +1310,24 @@ export default function Dashboard({ onNavigate, currentPath }) {
         possibleMatchups.sort((a, b) => a.difficulty - b.difficulty);
         possibleMatchups.forEach(match => {
             if (!scheduledTeamIds.has(match.t1.id) && !scheduledTeamIds.has(match.t2.id)) {
-                const finalSlot = match.validSlots.find(slot => (weeklyCourts[slot] || 0) > 0);
+                const finalSlot = match.validSlots.find(slot => noCourtsConfig || (weeklyCourts[slot] || 0) > 0);
                 if (finalSlot) {
                     schedule.push({ t1: match.t1, t2: match.t2, slot: finalSlot });
                     scheduledTeamIds.add(match.t1.id);
                     scheduledTeamIds.add(match.t2.id);
-                    weeklyCourts[finalSlot]--;
+                    if (!noCourtsConfig) weeklyCourts[finalSlot]--;
                 }
             }
         });
 
         createSchedule(schedule);
 
-        const unassigned = teams.filter(t => !scheduledTeamIds.has(t.id));
-        setGenerationLog(`Jornada generada: ${schedule.length} partidos. Sin jugar: ${unassigned.length} parejas.`);
+        const label = isTennis ? 'jugadores' : 'parejas';
+        const unassigned = availableTeams.filter(t => !scheduledTeamIds.has(t.id));
+        const weekOffCount = teams.length - availableTeams.length;
+        setGenerationLog(`Jornada generada: ${schedule.length} partidos. Sin asignar: ${unassigned.length} ${label}.${weekOffCount > 0 ? ` (${weekOffCount} no disponibles esta semana)` : ''}`);
         setActiveTab('schedule');
-    }, [isAdmin, teams, matches, courtAvailability, createSchedule]);
+    }, [isAdmin, teams, matches, courtAvailability, createSchedule, isTennis]);
 
     const submitResultHandler = useCallback((matchId, score, winnerId) => {
         if (!isAdmin) return;
@@ -1400,9 +1492,9 @@ export default function Dashboard({ onNavigate, currentPath }) {
         // Sport Selected View
         return (
             <div className="max-w-6xl mx-auto">
-                {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} />}
-                {activeTab === 'schedule' && <ScheduleView matches={matches} isAdmin={isAdmin} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} onChatClick={(match) => setChatMatch(match)} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onClearAll={clearAllData} />}
+                {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} sport={sport} />}
+                {activeTab === 'schedule' && <ScheduleView matches={matches} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onClearAll={clearAllData} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} />}
@@ -1778,6 +1870,14 @@ export default function Dashboard({ onNavigate, currentPath }) {
                             <p className="text-xs capitalize" style={{ color: 'var(--cyan)' }}>{user?.role}</p>
                         </div>
                     </div>
+                    {isRealAdmin && (
+                        <button onClick={() => setPreviewAsPlayer(p => !p)}
+                            className="w-full flex items-center gap-2 justify-center px-4 py-2 rounded-lg transition-all text-sm mb-2"
+                            style={{ background: previewAsPlayer ? 'rgba(118,193,255,0.15)' : 'rgba(44,3,243,0.08)', border: `1px solid ${previewAsPlayer ? 'rgba(118,193,255,0.4)' : 'rgba(44,3,243,0.3)'}`, color: previewAsPlayer ? '#76c1ff' : 'var(--text-2)' }}
+                        >
+                            {previewAsPlayer ? '👤 Vista Jugador (activa)' : '🔧 Ver como Jugador'}
+                        </button>
+                    )}
                     <button onClick={logout} className="w-full flex items-center gap-2 justify-center px-4 py-2 rounded-lg transition-all text-sm"
                         style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: 'var(--text-2)' }}
                         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(229,57,53,0.2)'; e.currentTarget.style.color = 'white'; }}
@@ -1785,6 +1885,15 @@ export default function Dashboard({ onNavigate, currentPath }) {
                     >
                         <LogOut size={16} /> Cerrar Sesión
                     </button>
+                    {/* Crédito NorteIA */}
+                    <div className="mt-3 pt-3 text-center" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        <p className="text-xs" style={{ color: 'var(--text-3)' }}>App desarrollada por</p>
+                        <a href="https://norteia.es" target="_blank" rel="noopener noreferrer"
+                            className="text-xs font-bold transition-colors hover:opacity-80"
+                            style={{ color: '#76c1ff' }}>
+                            Víctor Mago · NorteIA
+                        </a>
+                    </div>
                 </div>
             </aside>
 
@@ -1821,11 +1930,49 @@ export default function Dashboard({ onNavigate, currentPath }) {
 
                 {/* Mobile Menu Overlay */}
                 {isMobileMenuOpen && (
-                    <div className="md:hidden fixed inset-0 z-20 pt-20 px-4 space-y-3" style={{ background: 'var(--bg-nav)', backdropFilter: 'blur(16px)' }}>
-                        <button onClick={() => { setSport(null); setIsMobileMenuOpen(false); }} className="w-full p-4 rounded-xl text-left font-bold text-white" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)' }}>Inicio</button>
-                        <button onClick={() => { setSport('padel'); setActiveTab(isAdmin ? 'schedule' : 'availability'); setIsMobileMenuOpen(false); }} className="w-full p-4 rounded-xl text-left font-bold text-white" style={{ background: 'rgba(229,57,53,0.1)', border: '1px solid rgba(229,57,53,0.3)' }}>🏓 Pádel</button>
-                        <button onClick={() => { setSport('tennis'); setActiveTab(isAdmin ? 'schedule' : 'availability'); setIsMobileMenuOpen(false); }} className="w-full p-4 rounded-xl text-left font-bold text-white" style={{ background: 'rgba(255,193,7,0.08)', border: '1px solid rgba(255,193,7,0.25)' }}>🎾 Tenis</button>
-                        <button onClick={logout} className="w-full p-4 rounded-xl text-left font-bold mt-6" style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: '#ff6b6b' }}>Cerrar Sesión</button>
+                    <div className="md:hidden fixed inset-0 z-20 pt-16 overflow-y-auto" style={{ background: 'var(--bg-nav)', backdropFilter: 'blur(16px)' }}>
+                        <div className="px-4 py-4 space-y-2">
+                            <button onClick={() => { setSport(null); setIsMobileMenuOpen(false); }} className="w-full p-3.5 rounded-xl text-left font-bold text-white text-sm" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)' }}>🏠 Inicio</button>
+
+                            {/* Pádel */}
+                            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(229,57,53,0.3)' }}>
+                                <button onClick={() => { setSport('padel'); setActiveTab(isAdmin ? 'schedule' : 'availability'); setIsMobileMenuOpen(false); }} className="w-full p-3.5 text-left font-bold text-white text-sm" style={{ background: 'rgba(229,57,53,0.1)' }}>🏓 Pádel</button>
+                                <div className="grid grid-cols-3 gap-0" style={{ borderTop: '1px solid rgba(229,57,53,0.2)' }}>
+                                    {[{tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Disponib.'}, {tab: 'standings', label: 'Ranking'}, {tab: 'teams', label: 'Parejas'}, {tab: 'history', label: 'Historial'}, {tab: 'courts', label: 'Pistas'}].map(item => (
+                                        <button key={item.tab} onClick={() => { setSport('padel'); setActiveTab(item.tab); setIsMobileMenuOpen(false); }}
+                                            className="p-3 text-center text-xs font-medium"
+                                            style={{ color: (sport === 'padel' && activeTab === item.tab) ? 'var(--cyan)' : 'var(--text-2)', borderRight: '1px solid rgba(229,57,53,0.15)' }}>
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Tenis */}
+                            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,193,7,0.25)' }}>
+                                <button onClick={() => { setSport('tennis'); setActiveTab(isAdmin ? 'schedule' : 'availability'); setIsMobileMenuOpen(false); }} className="w-full p-3.5 text-left font-bold text-white text-sm" style={{ background: 'rgba(255,193,7,0.08)' }}>🎾 Tenis</button>
+                                <div className="grid grid-cols-2 gap-0" style={{ borderTop: '1px solid rgba(255,193,7,0.2)' }}>
+                                    {[{cat:'adults', label:'Adultos'}, {cat:'juveniles', label:'Juveniles'}].map(item => (
+                                        <button key={item.cat} onClick={() => { setSport('tennis'); setTennisCategory(item.cat); setActiveTab(isAdmin ? 'schedule' : 'availability'); setIsMobileMenuOpen(false); }}
+                                            className="p-3 text-center text-xs font-medium"
+                                            style={{ color: (sport === 'tennis' && tennisCategory === item.cat) ? '#FFC107' : 'var(--text-2)', borderRight: '1px solid rgba(255,193,7,0.15)' }}>
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-3 gap-0" style={{ borderTop: '1px solid rgba(255,193,7,0.15)' }}>
+                                    {[{tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Disponib.'}, {tab: 'standings', label: 'Ranking'}, {tab: 'teams', label: 'Jugadores'}, {tab: 'history', label: 'Historial'}, {tab: 'courts', label: 'Pistas'}].map(item => (
+                                        <button key={item.tab} onClick={() => { setSport('tennis'); setActiveTab(item.tab); setIsMobileMenuOpen(false); }}
+                                            className="p-3 text-center text-xs font-medium"
+                                            style={{ color: (sport === 'tennis' && activeTab === item.tab) ? '#FFC107' : 'var(--text-2)', borderRight: '1px solid rgba(255,193,7,0.15)' }}>
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <button onClick={logout} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-4" style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: '#ff6b6b' }}>Cerrar Sesión</button>
+                        </div>
                     </div>
                 )}
 
@@ -1885,7 +2032,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
                                     ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
                                     : { color: 'var(--text-3)' }}
                             >
-                                Parejas
+                                {isTennis ? 'Jugadores' : 'Parejas'}
                             </button>
                             <button
                                 data-tab="standings"
