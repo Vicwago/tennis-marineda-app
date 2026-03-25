@@ -293,9 +293,6 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                     </select>
                     {isAdmin && (
                         <>
-                            <Button variant="secondary" size="sm" onClick={generateDemoData} title="Generar datos de prueba">
-                                <RefreshCw size={18} />
-                            </Button>
                             <Button variant="success" size="sm" onClick={() => setShowImportModal(true)} title="Importar jugadores desde Excel/CSV">
                                 <Upload size={18} />
                             </Button>
@@ -1885,14 +1882,18 @@ export default function Dashboard({ onNavigate, currentPath }) {
                     >
                         <LogOut size={16} /> Cerrar Sesión
                     </button>
-                    {/* Crédito NorteIA */}
+                    {/* Crédito */}
                     <div className="mt-3 pt-3 text-center" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                        <p className="text-xs" style={{ color: 'var(--text-3)' }}>App desarrollada por</p>
-                        <a href="https://norteia.es" target="_blank" rel="noopener noreferrer"
-                            className="text-xs font-bold transition-colors hover:opacity-80"
-                            style={{ color: '#76c1ff' }}>
-                            Víctor Mago · NorteIA
-                        </a>
+                        <p className="text-xs mb-1" style={{ color: 'var(--text-3)' }}>Hecho por</p>
+                        <p className="text-xs">
+                            <a href="https://victormago.com" target="_blank" rel="noopener noreferrer"
+                                className="font-bold transition-opacity hover:opacity-80"
+                                style={{ color: '#76c1ff' }}>Víctor Mago</a>
+                            <span style={{ color: 'var(--text-3)' }}> · </span>
+                            <a href="https://norteia.es" target="_blank" rel="noopener noreferrer"
+                                className="font-bold transition-opacity hover:opacity-80"
+                                style={{ color: '#76c1ff' }}>NorteIA</a>
+                        </p>
                     </div>
                 </div>
             </aside>
