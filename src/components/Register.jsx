@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User, Mail, Lock, Activity, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import logoUrl from '../assets/logo.png';
 
 export default function Register({ onNavigateToLogin }) {
     const { register } = useAuth();
@@ -134,7 +135,7 @@ export default function Register({ onNavigateToLogin }) {
                 {/* Logo */}
                 <div className="flex items-center justify-center gap-3 mb-8">
                     <div className="w-12 h-12 rounded-xl p-2 flex items-center justify-center shrink-0" style={{ background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.35)' }}>
-                        <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
+                        <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                     <div>
                         <h1 className="text-xl font-bold text-brand-gradient leading-none">Escuela de Tenis</h1>

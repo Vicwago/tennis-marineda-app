@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { User, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import logoUrl from '../assets/logo.png';
 
 export default function Login({ onNavigateToRegister }) {
     const { login } = useAuth();
@@ -48,7 +49,7 @@ export default function Login({ onNavigateToRegister }) {
                     <div className="w-24 h-24 mx-auto mb-5 rounded-2xl p-2 shadow-lg relative"
                         style={{ background: 'linear-gradient(135deg, rgba(229,57,53,0.15), rgba(0,212,255,0.08))', border: '1px solid rgba(229,57,53,0.3)' }}>
                         <img
-                            src="/logo.png"
+                            src={logoUrl}
                             alt="Escuela de Tenis Marineda"
                             className="w-full h-full object-contain"
                         />

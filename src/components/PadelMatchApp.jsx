@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History } from 'lucide-react';
+import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -1700,7 +1701,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
             <aside className="hidden md:flex flex-col w-64 fixed h-full z-20" style={{ background: 'var(--bg-nav)', borderRight: '1px solid var(--border)' }}>
                 <div className="p-6 flex items-center gap-3" style={{ borderBottom: '1px solid var(--border)' }}>
                     <div className="w-10 h-10 rounded-xl p-1.5 shrink-0" style={{ background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.3)' }}>
-                        <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+                        <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                     <div>
                         <h1 className="font-bold leading-none text-white">Escuela</h1>
@@ -1926,7 +1927,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
                     style={{ background: 'rgba(6,13,26,0.9)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}>
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg p-1" style={{ background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.3)' }}>
-                            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+                            <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
                         </div>
                         <span className="font-bold text-white">Marineda</span>
                     </div>

@@ -38,17 +38,17 @@ const generateSlots = (sport, category) => {
 };
 
 // ─── Puntuación por deporte ────────────────────────────────────────────────
-// Ambos deportes: victoria=4 · derrota=0 (+1 si ganó algún set) · WO ganado=4
+// Todas las categorías: victoria=4 · derrota=1 (+1 extra si ganó algún set → 2 total) · WO ganado=4
 // Pádel extra: WO perdido con aviso >48h=0 · sin aviso=-1
-// Tenis extra:  WO perdido=0 siempre
+// Tenis/resto:  WO perdido=0 siempre
 const computePoints = (matchesData, teamId, sportName) => {
     const played = matchesData.filter(m => m.completed && (m.team1_id === teamId || m.team2_id === teamId));
     return played.reduce((acc, m) => {
         const isWin = m.winner_id === teamId;
         const isWO  = m.score === 'W.O.';
-        if (isWin)  return acc + 4;                                           // victoria (todos los deportes)
-        if (isWO)   return acc + (sportName === 'padel' && !m.wo_notified ? -1 : 0); // WO perdido
-        return acc + (m.loser_won_set ? 1 : 0);                               // derrota normal (+1 si ganó set)
+        if (isWin)  return acc + 4;                                                    // victoria: +4
+        if (isWO)   return acc + (sportName === 'padel' && !m.wo_notified ? -1 : 0);  // WO perdido: 0 o -1
+        return acc + 1 + (m.loser_won_set ? 1 : 0);                                   // derrota: 1 base + 1 si ganó set
     }, 0);
 };
 
@@ -196,7 +196,7 @@ export const DataProvider = ({ children }) => {
     const saveMatchResult = async (matchId, score, winnerId, loserWonSet = false) => {
         try {
             const winnerPts = 4;
-            const loserPts  = loserWonSet ? 1 : 0;
+            const loserPts  = loserWonSet ? 2 : 1;
 
             // 1. Update Match
             const { error: matchError } = await supabase
@@ -233,9 +233,7 @@ export const DataProvider = ({ children }) => {
             try {
                 const notifInserts = [];
                 const resultBase = `${match.t1.name} vs ${match.t2.name} — ${score}`;
-                const loserMsg = sport === 'padel'
-                    ? `📊 Partido terminado: ${resultBase}. +${loserPts} punto${loserPts !== 1 ? 's' : ''}.`
-                    : `📊 Partido terminado: ${resultBase}. +${loserPts} punto.`;
+                const loserMsg = `📊 Partido terminado: ${resultBase}. +${loserPts} punto${loserPts !== 1 ? 's' : ''}.`;
                 if (match.t1.user_id) notifInserts.push({ user_id: match.t1.user_id, match_id: matchId, type: 'result_saved', message: match.t1.id === winner.id ? `🏆 ¡Ganado! ${resultBase}. +${winnerPts} puntos.` : loserMsg });
                 if (match.t2.user_id) notifInserts.push({ user_id: match.t2.user_id, match_id: matchId, type: 'result_saved', message: match.t2.id === winner.id ? `🏆 ¡Ganado! ${resultBase}. +${winnerPts} puntos.` : loserMsg });
                 if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
