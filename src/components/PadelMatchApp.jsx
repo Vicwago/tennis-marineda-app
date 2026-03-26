@@ -736,43 +736,42 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                                         </div>
 
                                         {isAdmin ? (
-                                            <div className="p-2 rounded-lg flex flex-wrap gap-2 items-center justify-center" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                                                <input id={`score-${match.id}`} placeholder="6-3 6-4" className="cyber-input w-24 px-2 text-sm h-8 text-center" />
-                                                <select id={`winner-${match.id}`} className="cyber-input text-sm px-2 h-8 w-32 cursor-pointer">
-                                                    <option value="">Ganador...</option>
-                                                    <option value={match.t1.id}>{match.t1.name}</option>
-                                                    <option value={match.t2.id}>{match.t2.name}</option>
-                                                </select>
-                                                {/* Checkbox "¿el perdedor ganó algún set?" — aplica a ambos deportes */}
-                                                <label className="flex items-center gap-1 text-[10px] cursor-pointer select-none" style={{ color: 'var(--text-3)' }}>
-                                                    <input type="checkbox" id={`loser-set-${match.id}`} className="w-3 h-3 accent-cyan-400" />
-                                                    <span>Perdedor ganó set</span>
-                                                </label>
-                                                <Button size="sm" onClick={() => {
-                                                    const score = document.getElementById(`score-${match.id}`).value;
-                                                    const winner = document.getElementById(`winner-${match.id}`).value;
-                                                    const loserWonSet = document.getElementById(`loser-set-${match.id}`)?.checked || false;
-                                                    if (score && winner) submitResult(match.id, score, winner, loserWonSet);
-                                                }}>OK</Button>
-
-                                                <div className="w-px h-6 mx-1" style={{ background: 'var(--border)' }}></div>
-
-                                                <Button size="sm" variant="ghost" className="font-medium" style={{ color: '#F59E0B' }} onClick={() => postponeMatch(match.id)}>
-                                                    Aplazar
-                                                </Button>
-
-                                                <div className="w-px h-6 mx-1" style={{ background: 'var(--border)' }}></div>
-
-                                                <Button size="sm" variant="ghost" className="font-medium" style={{ color: 'var(--text-3)' }} title="Walkover / Retirada" onClick={() => {
-                                                    const winner = document.getElementById(`winner-${match.id}`).value;
-                                                    if (!winner) {
-                                                        alert("Selecciona primero quién ha ganado (el que SÍ se presentó).");
-                                                        return;
-                                                    }
-                                                    registerWalkover(match.id, winner);
-                                                }}>
-                                                    W.O.
-                                                </Button>
+                                            <div className="p-3 rounded-lg space-y-2" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+                                                <div className="flex flex-wrap gap-2 items-center">
+                                                    <input id={`score-${match.id}`} placeholder="6-3 6-4" className="cyber-input flex-shrink-0 w-24 px-2 text-sm h-9 text-center" />
+                                                    <select id={`winner-${match.id}`} className="cyber-input text-sm px-2 h-9 min-w-0 flex-1 cursor-pointer" style={{ maxWidth: '100%' }}>
+                                                        <option value="">Ganador...</option>
+                                                        <option value={match.t1.id}>{match.t1.name}</option>
+                                                        <option value={match.t2.id}>{match.t2.name}</option>
+                                                    </select>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2 items-center justify-between">
+                                                    <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none" style={{ color: 'var(--text-3)' }}>
+                                                        <input type="checkbox" id={`loser-set-${match.id}`} className="w-4 h-4 accent-cyan-400" />
+                                                        <span>Perdedor ganó set</span>
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button size="sm" onClick={() => {
+                                                            const score = document.getElementById(`score-${match.id}`).value;
+                                                            const winner = document.getElementById(`winner-${match.id}`).value;
+                                                            const loserWonSet = document.getElementById(`loser-set-${match.id}`)?.checked || false;
+                                                            if (score && winner) submitResult(match.id, score, winner, loserWonSet);
+                                                        }}>OK</Button>
+                                                        <Button size="sm" variant="ghost" className="font-medium" style={{ color: '#F59E0B' }} onClick={() => postponeMatch(match.id)}>
+                                                            Aplazar
+                                                        </Button>
+                                                        <Button size="sm" variant="ghost" className="font-medium" style={{ color: 'var(--text-3)' }} title="Walkover / Retirada" onClick={() => {
+                                                            const winner = document.getElementById(`winner-${match.id}`).value;
+                                                            if (!winner) {
+                                                                alert("Selecciona primero quién ha ganado (el que SÍ se presentó).");
+                                                                return;
+                                                            }
+                                                            registerWalkover(match.id, winner);
+                                                        }}>
+                                                            W.O.
+                                                        </Button>
+                                                    </div>
+                                                </div>
                                             </div>
                                         ) : (
                                             <div className="text-center">
@@ -804,11 +803,27 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
 });
 
 // --- HistoryView ---
-const HistoryView = memo(({ matches, currentSlots }) => {
+const HistoryView = memo(({ matches, currentSlots, teams }) => {
+    const [historyGroup, setHistoryGroup] = React.useState('all');
+
     const completedMatches = useMemo(
         () => [...matches].filter(m => m.completed).sort((a, b) => b.id - a.id),
         [matches]
     );
+
+    // Get unique groups from teams
+    const groups = useMemo(() => {
+        const g = [...new Set((teams || []).map(t => t.group).filter(Boolean))].sort();
+        return g;
+    }, [teams]);
+
+    // Filter by group if selected
+    const filteredMatches = useMemo(() => {
+        if (historyGroup === 'all') return completedMatches;
+        // Build set of team IDs in the selected group
+        const groupTeamIds = new Set((teams || []).filter(t => t.group === historyGroup).map(t => t.id));
+        return completedMatches.filter(m => groupTeamIds.has(m.team1_id) || groupTeamIds.has(m.team2_id));
+    }, [completedMatches, historyGroup, teams]);
 
     if (completedMatches.length === 0) {
         return (
@@ -830,11 +845,28 @@ const HistoryView = memo(({ matches, currentSlots }) => {
                 </div>
                 <div>
                     <h2 className="font-bold text-xl text-white">Historial de Resultados</h2>
-                    <p className="text-sm" style={{ color: 'var(--text-2)' }}>{completedMatches.length} partido{completedMatches.length !== 1 ? 's' : ''} jugado{completedMatches.length !== 1 ? 's' : ''}</p>
+                    <p className="text-sm" style={{ color: 'var(--text-2)' }}>{filteredMatches.length} partido{filteredMatches.length !== 1 ? 's' : ''} jugado{filteredMatches.length !== 1 ? 's' : ''}</p>
                 </div>
             </div>
+            {groups.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        onClick={() => setHistoryGroup('all')}
+                        className="px-3 py-1.5 rounded-full text-sm font-medium transition-all"
+                        style={historyGroup === 'all' ? { background: 'rgba(0,212,255,0.2)', color: '#00d4ff', border: '1px solid rgba(0,212,255,0.4)' } : { background: 'rgba(255,255,255,0.05)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+                    >Todos</button>
+                    {groups.map(g => (
+                        <button
+                            key={g}
+                            onClick={() => setHistoryGroup(g)}
+                            className="px-3 py-1.5 rounded-full text-sm font-medium transition-all"
+                            style={historyGroup === g ? { background: 'rgba(0,212,255,0.2)', color: '#00d4ff', border: '1px solid rgba(0,212,255,0.4)' } : { background: 'rgba(255,255,255,0.05)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+                        >{g}</button>
+                    ))}
+                </div>
+            )}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {completedMatches.map(match => {
+                {filteredMatches.map(match => {
                     const slotDetails = currentSlots.find(s => s.id === match.slot);
                     const isWO = match.score === 'W.O.';
                     const winner = match.winner_id === match.t1.id ? match.t1 : match.t2;
@@ -1514,7 +1546,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
                 {activeTab === 'schedule' && <ScheduleView matches={matches} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} />}
                 {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onClearAll={clearAllData} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} />}
-                {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} />}
+                {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} />}
                 {activeTab === 'calendar' && <CalendarView matches={matches} currentSlots={currentSlots} />}
                 {activeTab === 'standings' && (() => {
