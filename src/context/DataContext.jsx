@@ -103,12 +103,6 @@ export const DataProvider = ({ children }) => {
                     courtsQuery,
                 ]);
 
-                console.log('[DataContext] fetch results:', {
-                    teamsErr: teamsResult.error, teamsCount: teamsResult.data?.length,
-                    matchesErr: matchesResult.error, matchesCount: matchesResult.data?.length,
-                    courtsErr: courtsResult.error
-                });
-
                 if (teamsResult.error)   throw teamsResult.error;
                 if (matchesResult.error) throw matchesResult.error;
                 if (courtsResult.error)  throw courtsResult.error;
@@ -655,7 +649,7 @@ export const DataProvider = ({ children }) => {
             // Map normalizado de días (con y sin tilde)
             const dayNormMap = {
                 'lunes': 'Lunes', 'martes': 'Martes',
-                'miércoles': 'Miércoles', 'miercoles': 'Miércoles', 'miércoles': 'Miércoles',
+                'miércoles': 'Miércoles', 'miercoles': 'Miércoles',
                 'jueves': 'Jueves', 'viernes': 'Viernes',
                 'sábado': 'Sábado', 'sabado': 'Sábado',
                 'domingo': 'Domingo'
