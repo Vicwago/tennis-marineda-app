@@ -74,15 +74,15 @@ export const DataProvider = ({ children }) => {
         const fetchData = async () => {
             setLoading(true);
             try {
-                // Construir las 3 queries
+                // Construir las queries (sin join embebido en teams para evitar problemas PostgREST)
                 let teamsQuery = supabase
                     .from('teams')
-                    .select(`*, availability (day, hour)`)
+                    .select('*')
                     .eq('sport', sport);
 
                 let matchesQuery = supabase
                     .from('matches')
-                    .select(`*, t1:team1_id (id, name), t2:team2_id (id, name)`)
+                    .select(`*, t1:team1_id (id, name, user_id), t2:team2_id (id, name, user_id)`)
                     .eq('sport', sport);
 
                 let courtsQuery = supabase
@@ -96,30 +96,51 @@ export const DataProvider = ({ children }) => {
                     courtsQuery  = courtsQuery.eq('category', tennisCategory);
                 }
 
-                // ⚡ Ejecutar las 3 queries EN PARALELO (antes: secuencial ~1.5s → ahora ~0.5s)
+                // ⚡ Ejecutar queries EN PARALELO
                 const [teamsResult, matchesResult, courtsResult] = await Promise.all([
                     teamsQuery,
                     matchesQuery,
                     courtsQuery,
                 ]);
 
+                console.log('[DataContext] fetch results:', {
+                    teamsErr: teamsResult.error, teamsCount: teamsResult.data?.length,
+                    matchesErr: matchesResult.error, matchesCount: matchesResult.data?.length,
+                    courtsErr: courtsResult.error
+                });
+
                 if (teamsResult.error)   throw teamsResult.error;
                 if (matchesResult.error) throw matchesResult.error;
                 if (courtsResult.error)  throw courtsResult.error;
+
+                // Cargar availability por separado (evita posible ambigüedad PostgREST)
+                const teamIds = teamsResult.data.map(t => t.id);
+                let availabilityMap = {};
+                if (teamIds.length > 0) {
+                    const { data: availData } = await supabase
+                        .from('availability')
+                        .select('team_id, day, hour')
+                        .in('team_id', teamIds);
+                    if (availData) {
+                        availData.forEach(a => {
+                            if (!availabilityMap[a.team_id]) availabilityMap[a.team_id] = [];
+                            availabilityMap[a.team_id].push(a);
+                        });
+                    }
+                }
 
                 // Calcular puntos dinámicamente desde partidos completados (sport-aware)
                 const matchesData = matchesResult.data;
                 setTeams(teamsResult.data.map(t => {
                     const played = matchesData.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
+                    const teamAvail = availabilityMap[t.id] || [];
                     return {
                         ...t,
                         group: t.group_name,
                         matchesPlayed: played.length,
                         points: computePoints(matchesData, t.id, sport),
                         week_off: t.week_off || false,
-                        availability: Array.isArray(t.availability)
-                            ? t.availability.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
-                            : []
+                        availability: teamAvail.map(a => `${a.day.substring(0, 3).toLowerCase()}_${a.hour}`)
                     };
                 }));
 
