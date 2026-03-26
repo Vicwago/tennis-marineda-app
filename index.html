@@ -19,28 +19,42 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
+    <!-- Anti-cache meta tags -->
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
     <title>Escuela de Tenis Marineda</title>
   </head>
   <body>
     <div id="root"></div>
-    <!-- Limpiar Service Workers y caches obsoletos -->
+    <!-- Limpiar Service Workers, caches obsoletos, y auto-actualizar si hay versión nueva -->
     <script>
+      // 1. Limpiar SW
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(regs) {
-          var hadSW = regs.length > 0;
           regs.forEach(function(r) { r.unregister(); });
-          if ('caches' in window) {
-            caches.keys().then(function(keys) {
-              keys.forEach(function(k) { caches.delete(k); });
-              // Si había un SW activo, recargar para obtener código fresco
-              if (hadSW && !sessionStorage.getItem('sw_cleared')) {
-                sessionStorage.setItem('sw_cleared', '1');
-                location.reload();
-              }
-            });
-          }
         });
       }
+      // 2. Limpiar caches API
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(k) { caches.delete(k); });
+        });
+      }
+      // 3. Auto-actualizar: comprobar si el HTML cargado es el más reciente
+      (function() {
+        var BUILD_VERSION = 'v2026-03-26-3';
+        var vKey = 'app_version';
+        var stored = localStorage.getItem(vKey);
+        if (stored && stored !== BUILD_VERSION) {
+          localStorage.setItem(vKey, BUILD_VERSION);
+          // Forzar recarga saltándose caché del navegador
+          location.href = location.pathname + '?_=' + Date.now();
+          return;
+        }
+        localStorage.setItem(vKey, BUILD_VERSION);
+      })();
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
