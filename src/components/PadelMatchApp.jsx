@@ -738,7 +738,7 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                                         {isAdmin ? (
                                             <div className="p-3 rounded-lg space-y-2" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
                                                 <div className="flex flex-wrap gap-2 items-center">
-                                                    <input id={`score-${match.id}`} placeholder="6-3 6-4" className="cyber-input flex-shrink-0 w-24 px-2 text-sm h-9 text-center" />
+                                                    <input id={`score-${match.id}`} placeholder="6-3 6-4" className="cyber-input flex-shrink-0 w-24 text-sm h-9 text-center" style={{ padding: '0 0.5rem', borderRadius: '0.5rem' }} />
                                                     <select id={`winner-${match.id}`} className="cyber-input text-sm px-2 h-9 min-w-0 flex-1 cursor-pointer" style={{ maxWidth: '100%' }}
                                                         defaultValue=""
                                                         onChange={(e) => { e.target.style.color = e.target.value ? 'white' : '#94a3b8'; }}
