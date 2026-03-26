@@ -15,18 +15,30 @@
     <meta name="apple-mobile-web-app-title" content="Marineda" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
-    <!-- Favicon -->
+    <!-- Favicon + Manifest -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
 
     <title>Escuela de Tenis Marineda</title>
   </head>
   <body>
     <div id="root"></div>
-    <!-- Limpiar Service Workers obsoletos automáticamente -->
+    <!-- Limpiar Service Workers y caches obsoletos -->
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          registrations.forEach(function(r) { r.unregister(); });
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          var hadSW = regs.length > 0;
+          regs.forEach(function(r) { r.unregister(); });
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              keys.forEach(function(k) { caches.delete(k); });
+              // Si había un SW activo, recargar para obtener código fresco
+              if (hadSW && !sessionStorage.getItem('sw_cleared')) {
+                sessionStorage.setItem('sw_cleared', '1');
+                location.reload();
+              }
+            });
+          }
         });
       }
     </script>

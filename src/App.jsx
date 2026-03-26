@@ -7,18 +7,6 @@ import PadelMatchApp from './components/PadelMatchApp';
 import Login from './components/Login';
 import Register from './components/Register';
 import NewsFeed from './components/News/NewsFeed';
-import { useRegisterSW } from 'virtual:pwa-register/react';
-
-// Auto-recarga cuando hay nueva versión del service worker
-function SWUpdateDetector() {
-    const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
-        onRegistered(r) { r && setInterval(() => r.update(), 60 * 1000); }, // chequea cada minuto
-    });
-    React.useEffect(() => {
-        if (needRefresh) updateServiceWorker(true);
-    }, [needRefresh, updateServiceWorker]);
-    return null;
-}
 
 const AppContent = () => {
   const { isAuthenticated } = useAuth();
@@ -71,7 +59,6 @@ function App() {
     <AuthProvider>
       <GameProvider>
         <DataProvider>
-          <SWUpdateDetector />
           <AppContent />
         </DataProvider>
       </GameProvider>
