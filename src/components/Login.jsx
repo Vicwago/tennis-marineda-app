@@ -32,7 +32,9 @@ export default function Login({ onNavigateToRegister }) {
             await login(username.trim(), password);
         } catch (err) {
             const msg = err.message || '';
-            if (msg.toLowerCase().includes('email not confirmed') || msg.toLowerCase().includes('not confirmed')) {
+            if (msg === 'LOGIN_TIMEOUT') {
+                setError('El servidor tardó demasiado en responder (puede estar arrancando). Espera unos segundos e inténtalo de nuevo.');
+            } else if (msg.toLowerCase().includes('email not confirmed') || msg.toLowerCase().includes('not confirmed')) {
                 setError('Cuenta pendiente de verificación. Revisa tu correo y haz clic en el enlace de confirmación.');
             } else if (
                 msg.toLowerCase().includes('invalid login') ||

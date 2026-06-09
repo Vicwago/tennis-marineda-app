@@ -77,7 +77,13 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const login = async (email, password) => {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        // Tope de 20s: si Supabase está dormido (free tier) y no responde,
+        // fallamos con un error claro en vez de dejar el botón girando para siempre.
+        const signIn = supabase.auth.signInWithPassword({ email, password });
+        const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), 20000)
+        );
+        const { data, error } = await Promise.race([signIn, timeout]);
         if (error) throw error;
         return data;
     };
