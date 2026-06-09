@@ -266,7 +266,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onClearAll, showConfirm }) => {
+const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onClearAll, showConfirm }) => {
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
@@ -313,6 +313,11 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                     )}
                 </div>
             </div>
+
+            {/* Opciones de grupo existentes para autocompletar al asignar */}
+            <datalist id="group-options">
+                {groups.filter(g => g !== 'Todos').map(g => <option key={g} value={g} />)}
+            </datalist>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {filteredTeams.map(team => (
@@ -369,7 +374,22 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                             </div>
                                             <h3 className="font-bold text-white text-base">{team.name}</h3>
                                         </div>
-                                        {team.group && <span className="text-[10px] px-2 py-1 rounded-full font-bold" style={{ background: 'rgba(0,212,255,0.1)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.2)' }}>{team.group}</span>}
+                                        {isAdmin ? (
+                                            <input
+                                                key={team.group || 'nogroup'}
+                                                list="group-options"
+                                                defaultValue={team.group || ''}
+                                                placeholder="Sin grupo"
+                                                onClick={e => e.stopPropagation()}
+                                                onBlur={e => { const v = e.target.value.trim(); if (v !== (team.group || '')) onUpdateGroup(team.id, v); }}
+                                                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                                className="text-[10px] font-bold rounded-full px-2 py-1 w-24 text-center outline-none focus:ring-1"
+                                                style={{ background: 'rgba(0,212,255,0.1)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.25)' }}
+                                                title="Escribe o elige el grupo (ej: Grupo 1)"
+                                            />
+                                        ) : (
+                                            team.group && <span className="text-[10px] px-2 py-1 rounded-full font-bold" style={{ background: 'rgba(0,212,255,0.1)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.2)' }}>{team.group}</span>
+                                        )}
                                     </div>
 
                                     <div className="flex gap-3 text-xs mb-4">
@@ -1413,7 +1433,7 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onToggleTheme }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, importPlayers, deleteTeam, clearAllData } = useData();
+    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, importPlayers, deleteTeam, clearAllData } = useData();
     const { unreadCount } = useNotifications();
 
     // Navigation State
@@ -1785,7 +1805,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             <div className="w-full max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} sport={sport} showConfirm={showConfirm} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onClearAll={clearAllData} showConfirm={showConfirm} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onClearAll={clearAllData} showConfirm={showConfirm} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}

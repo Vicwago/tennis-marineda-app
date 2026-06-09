@@ -882,6 +882,18 @@ export const DataProvider = ({ children }) => {
         }
     }, []);
 
+    // Asignar / cambiar el grupo de un jugador (solo admin — protegido por trigger en BD)
+    const updateTeamGroup = useCallback(async (teamId, group) => {
+        try {
+            const value = group && group.trim() ? group.trim() : null;
+            const { error } = await supabase.from('teams').update({ group_name: value }).eq('id', teamId);
+            if (error) throw error;
+            setTeams(prev => prev.map(t => t.id === teamId ? { ...t, group_name: value, group: value } : t));
+        } catch (error) {
+            console.error('Error updating team group:', error);
+        }
+    }, []);
+
     const updateAppSettings = useCallback(async (key, value) => {
         try {
             // availability_locked / availability_deadline_label se guardan por ámbito
@@ -903,6 +915,7 @@ export const DataProvider = ({ children }) => {
         updateTeamAvailability,
         updateCourtCount,
         updateWeekOff,
+        updateTeamGroup,
         updateAppSettings,
         saveMatchResult,
         postponeMatch,
@@ -917,7 +930,7 @@ export const DataProvider = ({ children }) => {
         generateDemoData,
         loading,
         currentSlots
-    }), [teams, matches, courts, appSettings, loading, currentSlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateAppSettings]);
+    }), [teams, matches, courts, appSettings, loading, currentSlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings]);
 
     return (
         <DataContext.Provider value={value}>
