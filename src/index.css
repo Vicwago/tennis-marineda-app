@@ -42,6 +42,7 @@
     body {
         background-color: var(--bg-deep);
         color: var(--text-1);
+        overflow-x: hidden;
     }
 
     /* Scrollbar personalizada */
@@ -225,5 +226,91 @@
     @keyframes fadeUp {
         from { opacity: 0; transform: translateY(16px); }
         to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── Light mode ─── */
+    html.light {
+        --bg-deepest: #edf2f7;
+        --bg-deep:    #f4f8fc;
+        --bg-nav:     #d4e4f5;
+        --bg-card:    #ffffff;
+        --bg-input:   #f0f5fb;
+        --border:     rgba(0, 0, 0, 0.12);
+        --border-hi:  rgba(0, 0, 0, 0.24);
+        --text-1:     #0f172a;
+        --text-2:     #334155;
+        --text-3:     #64748b;
+    }
+    html.light body {
+        background-color: var(--bg-deep);
+        color: var(--text-1);
+    }
+    html.light .cyber-grid-bg {
+        background-color: var(--bg-deep);
+        background-image:
+            linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+    }
+    html.light .glass-card {
+        background: #ffffff;
+        border-color: rgba(0, 0, 0, 0.11);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
+    }
+    html.light .glass-card-hover:hover {
+        border-color: rgba(0, 212, 255, 0.4) !important;
+        box-shadow: 0 4px 24px rgba(0,212,255,0.10), 0 1px 3px rgba(0,0,0,0.04) !important;
+    }
+    html.light .cyber-input {
+        background: rgba(240, 245, 251, 0.95);
+        border-color: rgba(0, 0, 0, 0.13);
+        color: var(--text-1);
+    }
+    html.light .cyber-input::placeholder { color: var(--text-3); }
+    html.light .cyber-input:focus {
+        border-color: var(--cyan);
+        box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.10);
+    }
+    html.light .scroll-tabs-container::after {
+        background: linear-gradient(90deg, transparent, rgba(244, 248, 252, 0.95));
+    }
+    /* Sidebar nav: texto legible y hover visible en modo claro */
+    html.light aside nav button {
+        color: var(--text-2) !important;
+    }
+    html.light aside nav button:hover {
+        background: rgba(0, 0, 0, 0.05) !important;
+        color: var(--text-1) !important;
+    }
+    /* Texto blanco → texto oscuro en modo claro (excepto sobre fondos de color) */
+    html.light .text-white {
+        color: var(--text-1) !important;
+    }
+    /* Preservar blanco en botones con fondo de color y en badges */
+    html.light .btn-cyber .text-white,
+    html.light [class*="bg-"] .text-white,
+    html.light [style*="background: linear-gradient"] .text-white,
+    html.light [style*="background:linear-gradient"] .text-white {
+        color: white !important;
+    }
+
+    /* Scroll indicator para tabs horizontales */
+    .scroll-tabs-container {
+        position: relative;
+    }
+    .scroll-tabs-container::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 32px;
+        background: linear-gradient(90deg, transparent, rgba(6,13,26,0.95));
+        pointer-events: none;
+        border-radius: 0 0.75rem 0.75rem 0;
+        opacity: 1;
+        transition: opacity 0.2s;
+    }
+    .scroll-tabs-container.scrolled-end::after {
+        opacity: 0;
     }
 }

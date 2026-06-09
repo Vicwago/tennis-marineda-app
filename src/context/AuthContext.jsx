@@ -40,28 +40,29 @@ export const AuthProvider = ({ children }) => {
     };
 
     React.useEffect(() => {
-        const getSession = async () => {
+        const checkSession = async () => {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session?.user) {
-                    const userWithProfile = await fetchProfile(session.user);
-                    setUser(userWithProfile);
-                }
+                // Máximo 3s para comprobar sesión — si Supabase está dormido
+                // mostramos el login inmediatamente; onAuthStateChange
+                // gestionará el auto-login cuando despierte
+                const result = await Promise.race([
+                    (async () => {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session?.user) return null;
+                        return await fetchProfile(session.user);
+                    })(),
+                    new Promise(resolve => setTimeout(() => resolve(null), 3000))
+                ]);
+                if (result) setUser(result);
             } catch {
-                // Error silencioso — la app seguirá en estado no autenticado
+                // Silent
             } finally {
                 setLoading(false);
             }
         };
 
-        getSession();
+        checkSession();
 
-        // Timeout de seguridad: si Supabase tarda demasiado, desbloquea la app
-        const timeout = setTimeout(() => {
-            setLoading(prev => (prev ? false : prev));
-        }, 5000);
-
-        // Escuchar cambios de sesión (login/logout)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             if (session?.user) {
                 const userWithProfile = await fetchProfile(session.user);
@@ -72,71 +73,49 @@ export const AuthProvider = ({ children }) => {
             setLoading(false);
         });
 
-        return () => {
-            subscription.unsubscribe();
-            clearTimeout(timeout);
-        };
+        return () => subscription.unsubscribe();
     }, []);
 
     const login = async (email, password) => {
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Tiempo de espera agotado. Verifica tu conexión.')), 30000)
-        );
-
-        const loginPromise = supabase.auth.signInWithPassword({ email, password });
-        const { data, error } = await Promise.race([loginPromise, timeoutPromise]);
-
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         return data;
     };
 
-    const register = async (name, email, password, sport, category = null) => {
-        // 1. Create auth user — same 30s timeout as login
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Tiempo de espera agotado. Verifica tu conexión.')), 30000)
-        );
+    const resetPassword = async (email) => {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+            redirectTo: window.location.origin + '/'
+        });
+        if (error) throw error;
+    };
 
-        const signUpPromise = supabase.auth.signUp({ email, password });
-        const { data, error } = await Promise.race([signUpPromise, timeoutPromise]);
+    const register = async (name, email, password, sport, category = null) => {
+        // Los datos se pasan como metadata para que el trigger de BD
+        // cree automáticamente el perfil y equipo (bypassa RLS)
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    full_name: name,
+                    sport,
+                    category: sport === 'tennis' ? category : null
+                }
+            }
+        });
         if (error) throw error;
 
         const userId = data.user?.id;
         if (!userId) throw new Error('No se pudo crear el usuario.');
 
-        // Supabase puede requerir confirmación de email:
-        // si data.session es null, el usuario existe pero necesita confirmar.
-        if (!data.session) {
-            // Aun así intentamos crear el perfil y el equipo (puede que falle por RLS)
-            // pero no bloqueamos al usuario — el registro se considera exitoso.
+        // El trigger handle_new_user() ya creó perfil + equipo en la BD
+
+        // Si el email está auto-confirmado → cuenta lista, ir a login
+        if (data.user?.email_confirmed_at) {
+            return data;
         }
 
-        // 2. Create profile (no-fatal: si falla por RLS o confirmación pendiente, no rompe)
-        try {
-            await supabase
-                .from('profiles')
-                .upsert({ id: userId, full_name: name, role: 'player' }, { onConflict: 'id' });
-        } catch (e) {
-            console.warn('[Register] Profile insert failed (non-fatal):', e.message);
-        }
-
-        // 3. Create team linked to this user (no-fatal)
-        try {
-            await supabase
-                .from('teams')
-                .insert({
-                    name,
-                    sport,
-                    category: sport === 'tennis' ? category : null,
-                    group_name: null,
-                    points: 0,
-                    matches_played: 0,
-                    user_id: userId
-                });
-        } catch (e) {
-            console.warn('[Register] Team insert failed (non-fatal):', e.message);
-        }
-
-        // Si requiere confirmación de email, avisamos con un error especial
+        // Si no hay sesión y el email NO está confirmado → requiere confirmación
         if (!data.session) {
             const confirmError = new Error('CONFIRM_EMAIL');
             confirmError.needsConfirmation = true;
@@ -164,6 +143,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
+        resetPassword,
         loading,
         isAuthenticated: !!user
     };

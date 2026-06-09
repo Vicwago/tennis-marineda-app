@@ -12,4 +12,17 @@ export default defineConfig({
     host: true,
     port: 5176,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Separar dependencias grandes en chunks cacheables independientes:
+        // el usuario solo re-descarga el código de la app al actualizar, no React entero.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
+  },
 })

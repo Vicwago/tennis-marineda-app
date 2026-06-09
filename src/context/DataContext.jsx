@@ -65,6 +65,13 @@ export const DataProvider = ({ children }) => {
     // ⚡ Declarado ANTES de los useCallback que lo usan como dependencia
     const currentSlots = useMemo(() => generateSlots(sport, tennisCategory), [sport, tennisCategory]);
 
+    // El bloqueo y el plazo de disponibilidad son POR deporte/categoría, no globales.
+    // Traducimos la clave lógica a una clave física con sufijo de ámbito.
+    const scopedSettingKey = useCallback((logicalKey) => {
+        const suffix = sport === 'tennis' ? `tennis_${tennisCategory}` : (sport || 'padel');
+        return `${logicalKey}__${suffix}`;
+    }, [sport, tennisCategory]);
+
     useEffect(() => {
         if (!sport) {
             setLoading(false);
@@ -149,14 +156,15 @@ export const DataProvider = ({ children }) => {
                 courtsResult.data.forEach(c => { courtsMap[c.slot_id] = c.available_count; });
                 setCourts(courtsMap);
 
-                // Cargar app_settings
+                // Cargar app_settings (claves por ámbito deporte/categoría)
                 const { data: settingsData } = await supabase.from('app_settings').select('*');
                 if (settingsData) {
                     const s = {};
                     settingsData.forEach(row => { s[row.key] = row.value; });
+                    const suffix = sport === 'tennis' ? `tennis_${tennisCategory}` : (sport || 'padel');
                     setAppSettings({
-                        availability_locked: s.availability_locked === 'true',
-                        availability_deadline_label: s.availability_deadline_label || ''
+                        availability_locked: s[`availability_locked__${suffix}`] === 'true',
+                        availability_deadline_label: s[`availability_deadline_label__${suffix}`] || ''
                     });
                 }
 
@@ -207,13 +215,22 @@ export const DataProvider = ({ children }) => {
         }
     }, [sport, tennisCategory]);
 
+    // ─── Recalcula points/matchesPlayed de TODOS los equipos desde la lista de
+    //     partidos (única fuente de verdad). Evita divergencias entre BD y UI.
+    const recomputeTeamsFromMatches = (matchesList) => {
+        setTeams(prev => prev.map(t => {
+            const played = matchesList.filter(m => m.completed && (m.team1_id === t.id || m.team2_id === t.id));
+            return { ...t, matchesPlayed: played.length, points: computePoints(matchesList, t.id, sport) };
+        }));
+    };
+
     // loserWonSet: +1 pt al perdedor si ganó algún set (aplica a ambos deportes)
     const saveMatchResult = async (matchId, score, winnerId, loserWonSet = false) => {
         try {
             const winnerPts = 4;
             const loserPts  = loserWonSet ? 2 : 1;
 
-            // 1. Update Match
+            // 1. Update Match (los puntos se DERIVAN de los partidos, no se escriben en teams)
             const { error: matchError } = await supabase
                 .from('matches')
                 .update({ completed: true, score, winner_id: winnerId, played: true, loser_won_set: loserWonSet })
@@ -222,29 +239,20 @@ export const DataProvider = ({ children }) => {
 
             if (matchError) throw matchError;
 
-            // 2. Update teams.points en BD (para consistencia, aunque calculamos dinámicamente en frontend)
             const match = matches.find(m => m.id === matchId);
             if (!match) return;
 
             const winner = match.t1.id === winnerId ? match.t1 : match.t2;
             const loser  = match.t1.id === winnerId ? match.t2 : match.t1;
 
-            const { data: teamsData } = await supabase.from('teams').select('id, points, matches_played').in('id', [winner.id, loser.id]);
-            const winnerTeam = teamsData?.find(t => t.id === winner.id);
-            const loserTeam  = teamsData?.find(t => t.id === loser.id);
-            if (winnerTeam) await supabase.from('teams').update({ points: winnerTeam.points + winnerPts, matches_played: winnerTeam.matches_played + 1 }).eq('id', winner.id);
-            if (loserTeam)  await supabase.from('teams').update({ points: loserTeam.points + loserPts,  matches_played: loserTeam.matches_played + 1 }).eq('id', loser.id);
+            // 2. Update Local State + recálculo de puntos desde la fuente de verdad
+            const updatedMatches = matches.map(m => m.id === matchId
+                ? { ...m, completed: true, score, winner_id: winnerId, loser_won_set: loserWonSet }
+                : m);
+            setMatches(updatedMatches);
+            recomputeTeamsFromMatches(updatedMatches);
 
-            // 3. Update Local State (optimista)
-            const updatedMatch = { completed: true, score, winner_id: winnerId, loser_won_set: loserWonSet };
-            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, ...updatedMatch } : m));
-            setTeams(prev => prev.map(t => {
-                if (t.id === winner.id) return { ...t, points: t.points + winnerPts, matchesPlayed: (t.matchesPlayed || 0) + 1 };
-                if (t.id === loser.id)  return { ...t, points: t.points + loserPts,  matchesPlayed: (t.matchesPlayed || 0) + 1 };
-                return t;
-            }));
-
-            // 4. Notificaciones
+            // 3. Notificaciones
             try {
                 const notifInserts = [];
                 const resultBase = `${match.t1.name} vs ${match.t2.name} — ${score}`;
@@ -299,23 +307,14 @@ export const DataProvider = ({ children }) => {
             const winner = match.t1.id === winnerId ? match.t1 : match.t2;
             const loser  = match.t1.id === winner.id ? match.t2 : match.t1;
 
-            // 2. Update BD (winner + loser si padel con penalización)
-            const { data: teamsData } = await supabase.from('teams').select('id, points, matches_played').in('id', [winner.id, loser.id]);
-            const winnerTeam = teamsData?.find(t => t.id === winner.id);
-            const loserTeam  = teamsData?.find(t => t.id === loser.id);
-            if (winnerTeam) await supabase.from('teams').update({ points: winnerTeam.points + winnerPts, matches_played: winnerTeam.matches_played + 1 }).eq('id', winner.id);
-            if (loserTeam && loserPts !== 0) await supabase.from('teams').update({ points: loserTeam.points + loserPts, matches_played: loserTeam.matches_played + 1 }).eq('id', loser.id);
-            else if (loserTeam) await supabase.from('teams').update({ matches_played: loserTeam.matches_played + 1 }).eq('id', loser.id);
+            // 2. Update Local State + recálculo de puntos desde la fuente de verdad
+            const updatedMatches = matches.map(m => m.id === matchId
+                ? { ...m, completed: true, score: 'W.O.', winner_id: winnerId, played: true, wo_notified: notified }
+                : m);
+            setMatches(updatedMatches);
+            recomputeTeamsFromMatches(updatedMatches);
 
-            // 3. Update Local State
-            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, completed: true, score: 'W.O.', winner_id: winnerId, wo_notified: notified } : m));
-            setTeams(prev => prev.map(t => {
-                if (t.id === winner.id) return { ...t, points: t.points + winnerPts, matchesPlayed: (t.matchesPlayed || 0) + 1 };
-                if (t.id === loser.id)  return { ...t, points: t.points + loserPts,  matchesPlayed: (t.matchesPlayed || 0) + 1 };
-                return t;
-            }));
-
-            // 4. Notificaciones
+            // 3. Notificaciones
             try {
                 const notifInserts = [];
                 const loserPtsMsg = loserPts < 0 ? `${loserPts} punto` : loserPts === 0 ? '+0 puntos' : `+${loserPts} puntos`;
@@ -329,6 +328,160 @@ export const DataProvider = ({ children }) => {
         } catch (error) {
             console.error('Error registering WO:', error);
             alert('Error al registrar W.O.: ' + error.message);
+        }
+    };
+
+    // ─── CRUD individual de partidos (panel admin) ───────────────────────
+    // Crea un partido manual entre dos equipos en un slot concreto
+    const createMatch = async ({ team1_id, team2_id, slot_id }) => {
+        try {
+            const insertRow = {
+                team1_id,
+                team2_id,
+                sport,
+                category: sport === 'tennis' ? tennisCategory : null,
+                slot_id,
+                played: false,
+                postponed: false
+            };
+            const { data, error } = await supabase
+                .from('matches')
+                .insert(insertRow)
+                .select(`*, t1:team1_id (id, name, user_id), t2:team2_id (id, name, user_id)`)
+                .single();
+            if (error) throw error;
+
+            const processed = { ...data, slot: data.slot_id, t1: data.t1, t2: data.t2 };
+            setMatches(prev => [...prev, processed]);
+
+            // Notificaciones
+            try {
+                const slots = generateSlots(sport, tennisCategory);
+                const slotDetails = slots.find(s => s.id === slot_id);
+                const timeStr = slotDetails ? `${slotDetails.day} a las ${slotDetails.hour}` : 'fecha por confirmar';
+                const notifInserts = [];
+                if (processed.t1?.user_id) {
+                    notifInserts.push({
+                        user_id: processed.t1.user_id,
+                        match_id: processed.id,
+                        type: 'match_assigned',
+                        message: `🗓️ Nuevo partido: ${processed.t1.name} vs ${processed.t2.name} — ${timeStr}.`
+                    });
+                }
+                if (processed.t2?.user_id) {
+                    notifInserts.push({
+                        user_id: processed.t2.user_id,
+                        match_id: processed.id,
+                        type: 'match_assigned',
+                        message: `🗓️ Nuevo partido: ${processed.t2.name} vs ${processed.t1.name} — ${timeStr}.`
+                    });
+                }
+                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+            } catch (notifErr) {
+                console.warn('No se pudo notificar creación de partido:', notifErr);
+            }
+
+            return processed;
+        } catch (error) {
+            console.error('Error creating match:', error);
+            throw error;
+        }
+    };
+
+    // Actualiza campos de un partido (slot, team1, team2). Notifica a los implicados si cambia el horario.
+    const updateMatch = async (matchId, updates) => {
+        try {
+            const dbUpdates = {};
+            if (updates.slot_id !== undefined) dbUpdates.slot_id = updates.slot_id;
+            if (updates.team1_id !== undefined) dbUpdates.team1_id = updates.team1_id;
+            if (updates.team2_id !== undefined) dbUpdates.team2_id = updates.team2_id;
+
+            const { data, error } = await supabase
+                .from('matches')
+                .update(dbUpdates)
+                .eq('id', matchId)
+                .select(`*, t1:team1_id (id, name, user_id), t2:team2_id (id, name, user_id)`)
+                .single();
+            if (error) throw error;
+
+            const processed = { ...data, slot: data.slot_id, t1: data.t1, t2: data.t2 };
+            setMatches(prev => prev.map(m => m.id === matchId ? processed : m));
+
+            // Notificación de cambio
+            try {
+                const slots = generateSlots(sport, tennisCategory);
+                const slotDetails = slots.find(s => s.id === processed.slot_id);
+                const timeStr = slotDetails ? `${slotDetails.day} a las ${slotDetails.hour}` : 'fecha por confirmar';
+                const notifInserts = [];
+                if (processed.t1?.user_id) {
+                    notifInserts.push({
+                        user_id: processed.t1.user_id,
+                        match_id: processed.id,
+                        type: 'match_updated',
+                        message: `✏️ Partido actualizado: ${processed.t1.name} vs ${processed.t2.name} — ${timeStr}.`
+                    });
+                }
+                if (processed.t2?.user_id) {
+                    notifInserts.push({
+                        user_id: processed.t2.user_id,
+                        match_id: processed.id,
+                        type: 'match_updated',
+                        message: `✏️ Partido actualizado: ${processed.t2.name} vs ${processed.t1.name} — ${timeStr}.`
+                    });
+                }
+                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+            } catch (notifErr) {
+                console.warn('No se pudo notificar actualización de partido:', notifErr);
+            }
+
+            return processed;
+        } catch (error) {
+            console.error('Error updating match:', error);
+            throw error;
+        }
+    };
+
+    // Elimina un partido y notifica a los equipos afectados
+    const deleteMatch = async (matchId) => {
+        try {
+            const match = matches.find(m => m.id === matchId);
+
+            // Borrar notificaciones ligadas (FK) para evitar problemas
+            try {
+                await supabase.from('notifications').delete().eq('match_id', matchId);
+            } catch (_) { /* no-op */ }
+
+            const { error } = await supabase.from('matches').delete().eq('id', matchId);
+            if (error) throw error;
+
+            setMatches(prev => prev.filter(m => m.id !== matchId));
+
+            // Notificar a los equipos afectados
+            if (match) {
+                try {
+                    const notifInserts = [];
+                    if (match.t1?.user_id) {
+                        notifInserts.push({
+                            user_id: match.t1.user_id,
+                            type: 'match_cancelled',
+                            message: `❌ Partido cancelado: ${match.t1.name} vs ${match.t2.name}.`
+                        });
+                    }
+                    if (match.t2?.user_id) {
+                        notifInserts.push({
+                            user_id: match.t2.user_id,
+                            type: 'match_cancelled',
+                            message: `❌ Partido cancelado: ${match.t2.name} vs ${match.t1.name}.`
+                        });
+                    }
+                    if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+                } catch (notifErr) {
+                    console.warn('No se pudo notificar cancelación:', notifErr);
+                }
+            }
+        } catch (error) {
+            console.error('Error deleting match:', error);
+            throw error;
         }
     };
 
@@ -731,12 +884,16 @@ export const DataProvider = ({ children }) => {
 
     const updateAppSettings = useCallback(async (key, value) => {
         try {
-            await supabase.from('app_settings').upsert({ key, value: String(value), updated_at: new Date().toISOString() });
+            // availability_locked / availability_deadline_label se guardan por ámbito
+            const physicalKey = (key === 'availability_locked' || key === 'availability_deadline_label')
+                ? scopedSettingKey(key)
+                : key;
+            await supabase.from('app_settings').upsert({ key: physicalKey, value: String(value), updated_at: new Date().toISOString() });
             setAppSettings(prev => ({ ...prev, [key]: key === 'availability_locked' ? value === true || value === 'true' : value }));
         } catch (error) {
             console.error('Error updating app settings:', error);
         }
-    }, []);
+    }, [scopedSettingKey]);
 
     // ⚡ Memoizado: los consumidores solo re-renderizan cuando los datos realmente cambian
     const value = useMemo(() => ({
@@ -750,6 +907,9 @@ export const DataProvider = ({ children }) => {
         saveMatchResult,
         postponeMatch,
         registerWalkover,
+        createMatch,
+        updateMatch,
+        deleteMatch,
         importPlayers,
         deleteTeam,
         clearAllData,

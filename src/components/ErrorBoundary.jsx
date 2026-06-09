@@ -21,14 +21,16 @@ class ErrorBoundary extends React.Component {
                 <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4">
                     <div className="bg-slate-800 p-8 rounded-xl border border-red-500/50 max-w-2xl w-full shadow-2xl">
                         <h1 className="text-3xl font-bold text-red-500 mb-4">¡Vaya! Algo ha salido mal.</h1>
-                        <p className="text-slate-300 mb-6">La aplicación ha encontrado un error inesperado.</p>
+                        <p className="text-slate-300 mb-6">La aplicación ha encontrado un error inesperado. Puedes volver al inicio e intentarlo de nuevo. Si el problema persiste, contacta con el administrador del club.</p>
 
-                        <div className="bg-slate-950 p-4 rounded-lg overflow-auto max-h-64 mb-6 border border-slate-700">
-                            <p className="font-mono text-red-400 font-bold mb-2">{this.state.error && this.state.error.toString()}</p>
-                            <pre className="font-mono text-xs text-slate-500 whitespace-pre-wrap">
-                                {this.state.errorInfo && this.state.errorInfo.componentStack}
-                            </pre>
-                        </div>
+                        {import.meta.env.DEV && (
+                            <div className="bg-slate-950 p-4 rounded-lg overflow-auto max-h-64 mb-6 border border-slate-700">
+                                <p className="font-mono text-red-400 font-bold mb-2">{this.state.error && this.state.error.toString()}</p>
+                                <pre className="font-mono text-xs text-slate-500 whitespace-pre-wrap">
+                                    {this.state.errorInfo && this.state.errorInfo.componentStack}
+                                </pre>
+                            </div>
+                        )}
 
                         <button
                             onClick={() => window.location.href = '/'}

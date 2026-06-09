@@ -3,10 +3,22 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const FROM_EMAIL = 'jornadas@tenis-marineda.es'; // cambiar por dominio verificado en Resend
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Solo permitimos llamadas desde los orígenes propios de la app (evita que
+// terceros gasten nuestra cuota de Resend). Añade aquí dominios nuevos.
+const ALLOWED_ORIGINS = [
+  'https://tennis-padel-app-sigma.vercel.app',
+  'http://localhost:5176',
+  'http://localhost:5173',
+];
+
+function corsFor(origin: string | null) {
+  const allow = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allow,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary': 'Origin',
+  };
+}
 
 interface MatchNotification {
   playerName: string;
@@ -131,6 +143,8 @@ function buildEmailHtml(match: MatchNotification): string {
 }
 
 serve(async (req) => {
+  const corsHeaders = corsFor(req.headers.get('origin'));
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

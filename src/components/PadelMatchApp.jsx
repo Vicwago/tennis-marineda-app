@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History } from 'lucide-react';
+import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
 import { useData } from '../context/DataContext';
@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import NotificationsPanel from './NotificationsPanel';
 import MatchChat from './MatchChat';
+import ConfirmDialog, { useConfirm } from './ConfirmDialog';
 
 // --- UI Components ---
 const Card = ({ children, className = "" }) => (
@@ -130,7 +131,7 @@ const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulk
     );
 };
 
-const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, fillDailyCourts, updateCourtCount }) => {
+const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, fillDailyCourts, updateCourtCount, showConfirm }) => {
     const [expandedDay, setExpandedDay] = useState(DAYS[0]);
     const [customSlots, setCustomSlots] = useState(() => {
         try { return JSON.parse(localStorage.getItem(`custom_slots_${sport}_${tennisCategory}`) || '{}'); } catch { return {}; }
@@ -144,7 +145,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     };
 
     const addCustomSlot = (day) => {
-        if (!newHour.match(/^\d{2}:\d{2}$/)) { alert('Formato incorrecto. Usa HH:MM (ej: 15:30)'); return; }
+        if (!newHour.match(/^\d{2}:\d{2}$/)) { showConfirm({ title: 'Formato incorrecto', message: 'Usa HH:MM (ej: 15:30)', cancelText: null, variant: 'warning' }); return; }
         const id = `custom_${day.substring(0,3).toLowerCase()}_${newHour}`;
         const updated = { ...customSlots, [id]: { id, day, hour: newHour, custom: true } };
         saveCustomSlots(updated);
@@ -265,7 +266,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onClearAll }) => {
+const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onClearAll, showConfirm }) => {
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
@@ -276,7 +277,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 p-4 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-4 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg" style={{ background: 'rgba(255,193,7,0.1)', color: '#FFC107' }}>
                         <Users size={24} />
@@ -301,10 +302,9 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                 variant="danger"
                                 size="sm"
                                 title="Borrar todos los jugadores y partidos"
-                                onClick={() => {
-                                    if (confirm(`⚠️ ¿Borrar TODOS los jugadores y partidos? Esta acción no se puede deshacer.`)) {
-                                        onClearAll();
-                                    }
+                                onClick={async () => {
+                                    const ok = await showConfirm({ title: 'Borrar todo', message: '¿Borrar TODOS los jugadores y partidos?\nEsta acción no se puede deshacer.', confirmText: 'Borrar todo', variant: 'danger' });
+                                    if (ok) onClearAll();
                                 }}
                             >
                                 <X size={18} />
@@ -403,7 +403,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                     </div>
                                 </div>
                                 {isAdmin && (
-                                    <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                    <div className="absolute top-4 right-4 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-all">
                                         <button
                                             onClick={() => startEditing(team)}
                                             className="p-2 rounded-full transition-all"
@@ -415,7 +415,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                             <Settings size={16} />
                                         </button>
                                         <button
-                                            onClick={() => { if (confirm(`¿Eliminar a "${team.name}"? Esta acción no se puede deshacer.`)) onDeleteTeam(team.id); }}
+                                            onClick={async () => { const ok = await showConfirm({ title: 'Eliminar jugador', message: `¿Eliminar a "${team.name}"?\nEsta acción no se puede deshacer.`, confirmText: 'Eliminar', variant: 'danger' }); if (ok) onDeleteTeam(team.id); }}
                                             className="p-2 rounded-full transition-all"
                                             style={{ color: 'var(--text-3)' }}
                                             onMouseEnter={e => { e.currentTarget.style.color = '#ff4444'; e.currentTarget.style.background = 'rgba(255,68,68,0.1)'; }}
@@ -443,26 +443,31 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
     );
 });
 
-const MyAvailabilityView = memo(({ teams, currentSlots, sport }) => {
+const MyAvailabilityView = memo(({ teams, currentSlots, sport, showConfirm }) => {
     const { updateTeamAvailability, updateWeekOff, appSettings } = useData();
     const { user } = useAuth();
-    const [myTeamId, setMyTeamId] = useState(localStorage.getItem('myTeamId') || '');
+    const [myTeamId, setMyTeamId] = useState('');
     const [selectedAvailability, setSelectedAvailability] = useState([]);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const isLocked = appSettings?.availability_locked;
     const deadlineLabel = appSettings?.availability_deadline_label;
 
+    // Buscar equipo vinculado al usuario autenticado
+    const linkedTeam = useMemo(() => {
+        if (!user?.id || !teams.length) return null;
+        return teams.find(t => t.user_id === user.id) || null;
+    }, [user?.id, teams]);
+
+    // Auto-seleccionar equipo vinculado al usuario
     useEffect(() => {
-        if (user?.id && !myTeamId && teams.length > 0) {
-            const linkedTeam = teams.find(t => t.user_id === user.id);
-            if (linkedTeam) {
-                const idStr = String(linkedTeam.id);
+        if (linkedTeam) {
+            const idStr = String(linkedTeam.id);
+            if (myTeamId !== idStr) {
                 setMyTeamId(idStr);
-                localStorage.setItem('myTeamId', idStr);
                 setSelectedAvailability(linkedTeam.availability || []);
             }
         }
-    }, [user?.id, teams, myTeamId]);
+    }, [linkedTeam]);
 
     useEffect(() => {
         if (myTeamId) {
@@ -476,14 +481,6 @@ const MyAvailabilityView = memo(({ teams, currentSlots, sport }) => {
         }
     }, [myTeamId, teams, hasUnsavedChanges]);
 
-    const handleTeamChange = (e) => {
-        setMyTeamId(e.target.value);
-        setHasUnsavedChanges(false);
-        localStorage.setItem('myTeamId', e.target.value);
-        const team = teams.find(t => t.id === parseInt(e.target.value));
-        if (team) setSelectedAvailability(team.availability || []);
-    };
-
     const toggleSlot = (slotId) => {
         if (isLocked) return;
         setHasUnsavedChanges(true);
@@ -494,7 +491,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, sport }) => {
         if (!myTeamId || isLocked) return;
         updateTeamAvailability(parseInt(myTeamId), selectedAvailability);
         setHasUnsavedChanges(false);
-        alert('¡Disponibilidad guardada correctamente!');
+        showConfirm({ title: 'Guardado', message: '¡Disponibilidad guardada correctamente!', cancelText: null, variant: 'info' });
     };
 
     const handleWeekOff = (val) => {
@@ -502,27 +499,20 @@ const MyAvailabilityView = memo(({ teams, currentSlots, sport }) => {
         updateWeekOff(parseInt(myTeamId), val);
     };
 
-    if (!myTeamId) {
+    // Si el usuario no tiene equipo vinculado, mostrar mensaje informativo
+    if (!linkedTeam) {
         return (
-            <div className="max-w-md mx-auto mt-10 p-8 rounded-2xl text-center animate-in fade-in zoom-in" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)' }}>
+            <div className="w-full mt-8 p-6 rounded-2xl text-center animate-in fade-in zoom-in" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)', maxWidth: '28rem', marginLeft: 'auto', marginRight: 'auto' }}>
                 <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(0,212,255,0.1)', color: 'var(--cyan)' }}>
                     <User size={32} />
                 </div>
-                <h2 className="text-xl font-bold text-white mb-2">Identifícate</h2>
-                <p className="mb-4" style={{ color: 'var(--text-2)' }}>Para gestionar tu disponibilidad, primero dinos quién eres.</p>
-                {user && teams.length === 0 && (
-                    <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ color: 'var(--cyan)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
-                        Tu perfil está registrado en otro deporte. Navega al deporte correcto desde el menú lateral.
-                    </p>
-                )}
-                {teams.length > 0 && (
-                    <select value={myTeamId} onChange={handleTeamChange} className="cyber-input w-full p-3 rounded-xl">
-                        <option value="">Selecciona tu nombre...</option>
-                        {teams.sort((a, b) => a.name.localeCompare(b.name)).map(t => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
-                        ))}
-                    </select>
-                )}
+                <h2 className="text-xl font-bold text-white mb-2">Cuenta no vinculada</h2>
+                <p className="mb-4" style={{ color: 'var(--text-2)' }}>
+                    Tu cuenta aún no está vinculada a ningún jugador en esta categoría.
+                </p>
+                <p className="text-xs px-3 py-2 rounded-lg" style={{ color: 'var(--cyan)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
+                    Contacta al administrador para que vincule tu cuenta con tu perfil de jugador.
+                </p>
             </div>
         );
     }
@@ -561,7 +551,6 @@ const MyAvailabilityView = memo(({ teams, currentSlots, sport }) => {
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <button onClick={() => setMyTeamId('')} className="text-xs underline transition-colors flex-shrink-0" style={{ color: 'var(--text-3)' }}>Cambiar</button>
                         {hasUnsavedChanges && !isLocked && (
                             <Button onClick={save} className="flex-1 sm:flex-none text-sm py-2">Guardar</Button>
                         )}
@@ -636,11 +625,91 @@ const MyAvailabilityView = memo(({ teams, currentSlots, sport }) => {
     );
 });
 
-const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, onChatClick, isTennis, appSettings, updateAppSettings }) => {
+const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, onChatClick, isTennis, appSettings, updateAppSettings, showConfirm }) => {
     const activeMatches = useMemo(() => matches.filter(m => !m.completed), [matches]);
     const label = isTennis ? 'jugadores' : 'parejas';
     const [deadlineInput, setDeadlineInput] = useState(appSettings?.availability_deadline_label || '');
     const isLocked = appSettings?.availability_locked;
+
+    // ─── Estado del editor de partidos (admin) ────────────────────────
+    // mode: 'create' | 'edit' | null
+    const [editorMode, setEditorMode] = useState(null);
+    const [editorMatch, setEditorMatch] = useState(null); // partido en edición
+    const [editTeam1, setEditTeam1] = useState('');
+    const [editTeam2, setEditTeam2] = useState('');
+    const [editSlot, setEditSlot] = useState('');
+    const [savingEdit, setSavingEdit] = useState(false);
+
+    const openCreateMatch = useCallback(() => {
+        setEditorMode('create');
+        setEditorMatch(null);
+        setEditTeam1('');
+        setEditTeam2('');
+        setEditSlot(currentSlots[0]?.id || '');
+    }, [currentSlots]);
+
+    const openEditMatch = useCallback((match) => {
+        setEditorMode('edit');
+        setEditorMatch(match);
+        setEditTeam1(String(match.t1?.id || match.team1_id || ''));
+        setEditTeam2(String(match.t2?.id || match.team2_id || ''));
+        setEditSlot(match.slot || match.slot_id || '');
+    }, []);
+
+    const closeEditor = useCallback(() => {
+        setEditorMode(null);
+        setEditorMatch(null);
+        setSavingEdit(false);
+    }, []);
+
+    const handleSaveEditor = useCallback(async () => {
+        if (!editTeam1 || !editTeam2 || !editSlot) {
+            showConfirm({ title: 'Faltan datos', message: 'Selecciona ambos equipos y un horario.', cancelText: null, variant: 'warning' });
+            return;
+        }
+        if (editTeam1 === editTeam2) {
+            showConfirm({ title: 'Equipos iguales', message: 'No puedes enfrentar un equipo consigo mismo.', cancelText: null, variant: 'warning' });
+            return;
+        }
+        setSavingEdit(true);
+        try {
+            if (editorMode === 'create') {
+                await createMatch({ team1_id: Number(editTeam1), team2_id: Number(editTeam2), slot_id: editSlot });
+            } else if (editorMode === 'edit' && editorMatch) {
+                await updateMatch(editorMatch.id, {
+                    team1_id: Number(editTeam1),
+                    team2_id: Number(editTeam2),
+                    slot_id: editSlot
+                });
+            }
+            closeEditor();
+        } catch (e) {
+            showConfirm({ title: 'Error', message: 'No se pudo guardar: ' + (e.message || e), cancelText: null, variant: 'danger' });
+            setSavingEdit(false);
+        }
+    }, [editorMode, editorMatch, editTeam1, editTeam2, editSlot, createMatch, updateMatch, closeEditor, showConfirm]);
+
+    const handleDeleteMatch = useCallback(async () => {
+        if (!editorMatch) return;
+        const ok = await showConfirm({
+            title: '¿Eliminar partido?',
+            message: `Se eliminará el partido ${editorMatch.t1?.name} vs ${editorMatch.t2?.name} y se notificará a los equipos.`,
+            confirmText: 'Eliminar',
+            variant: 'danger'
+        });
+        if (!ok) return;
+        setSavingEdit(true);
+        try {
+            await deleteMatch(editorMatch.id);
+            closeEditor();
+        } catch (e) {
+            showConfirm({ title: 'Error', message: 'No se pudo eliminar: ' + (e.message || e), cancelText: null, variant: 'danger' });
+            setSavingEdit(false);
+        }
+    }, [editorMatch, deleteMatch, closeEditor, showConfirm]);
+
+    // Ordenar teams para selects
+    const sortedTeams = useMemo(() => [...(teams || [])].sort((a, b) => a.name.localeCompare(b.name)), [teams]);
 
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
@@ -684,9 +753,18 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                             Cruza {label} con horarios compatibles, respetando grupos y semana libre.
                         </p>
                     </div>
-                    <Button onClick={generateWeeklySchedule} className="bg-brand-red hover:bg-brand-dark text-white border-none w-full sm:w-auto py-2.5 px-5">
-                        Generar Jornada
-                    </Button>
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <Button onClick={generateWeeklySchedule} className="bg-brand-red hover:bg-brand-dark text-white border-none w-full sm:w-auto py-2.5 px-5">
+                            Generar Jornada
+                        </Button>
+                        <button
+                            onClick={openCreateMatch}
+                            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-bold transition-all w-full sm:w-auto"
+                            style={{ background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.4)', color: 'var(--cyan)' }}
+                        >
+                            <Plus size={16} /> Añadir partido
+                        </button>
+                    </div>
                 </div>
                 </>
             )}
@@ -718,13 +796,13 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                         const slotDetails = currentSlots.find(s => s.id === match.slot);
                         return (
                             <Card key={match.id} className={`flex flex-col overflow-hidden transition-all`} style={{ borderLeft: `3px solid ${match.postponed ? '#F59E0B' : '#E53935'}` }}>
-                                <div className="flex flex-row h-full">
-                                    <div className="p-4 flex flex-col justify-center items-center min-w-[100px]" style={{ background: 'rgba(255,255,255,0.03)', borderRight: '1px solid var(--border)' }}>
+                                <div className="flex flex-row h-full min-w-0">
+                                    <div className="p-2 px-3 flex flex-col justify-center items-center min-w-[64px]" style={{ background: 'rgba(255,255,255,0.03)', borderRight: '1px solid var(--border)' }}>
                                         <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>{slotDetails?.day.substring(0, 3)}</span>
                                         <span className="text-xl font-bold text-white">{slotDetails?.hour}</span>
                                         {match.postponed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full mt-2" style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}>APLAZADO</span>}
                                     </div>
-                                    <div className="p-4 flex-1 flex flex-col justify-center">
+                                    <div className="p-3 flex-1 min-w-0 flex flex-col justify-center">
                                         <div className="flex justify-between items-center mb-4">
                                             <div className="flex-1 text-right pr-3">
                                                 <span className="font-bold text-white block leading-tight">{match.t1.name}</span>
@@ -753,7 +831,7 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                                                         <input type="checkbox" id={`loser-set-${match.id}`} className="w-4 h-4 accent-cyan-400" />
                                                         <span>Perdedor ganó set</span>
                                                     </label>
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
                                                         <Button size="sm" onClick={() => {
                                                             const score = document.getElementById(`score-${match.id}`).value;
                                                             const winner = document.getElementById(`winner-${match.id}`).value;
@@ -766,7 +844,7 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                                                         <Button size="sm" variant="ghost" className="font-medium" style={{ color: 'var(--text-3)' }} title="Walkover / Retirada" onClick={() => {
                                                             const winner = document.getElementById(`winner-${match.id}`).value;
                                                             if (!winner) {
-                                                                alert("Selecciona primero quién ha ganado (el que SÍ se presentó).");
+                                                                showConfirm({ title: 'Falta ganador', message: 'Selecciona primero quién ha ganado (el que SÍ se presentó).', cancelText: null, variant: 'warning' });
                                                                 return;
                                                             }
                                                             registerWalkover(match.id, winner);
@@ -785,7 +863,19 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                                         )}
                                     </div>
                                 </div>
-                            <div className="px-4 py-2 flex items-center justify-end" style={{ borderTop: '1px solid var(--border)' }}>
+                            <div className="px-4 py-2 flex items-center justify-end gap-2" style={{ borderTop: '1px solid var(--border)' }}>
+                                {isAdmin && (
+                                    <button
+                                        onClick={() => openEditMatch(match)}
+                                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                                        style={{ color: '#FFC107', border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.08)' }}
+                                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,193,7,0.18)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,193,7,0.08)'; }}
+                                        title="Editar partido"
+                                    >
+                                        <Edit3 size={14} /> Editar
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => onChatClick && onChatClick(match)}
                                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
@@ -801,6 +891,117 @@ const ScheduleView = memo(({ matches, isAdmin, generateWeeklySchedule, generatio
                     })}
                 </div>
             </div>
+
+            {/* ─── Modal de edición/creación de partidos (admin) ─── */}
+            {isAdmin && editorMode && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+                    style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
+                    onClick={closeEditor}
+                >
+                    <div
+                        className="rounded-2xl shadow-2xl max-w-md w-full outline-none animate-in fade-in zoom-in duration-150"
+                        style={{ background: 'var(--bg-card)', border: '1px solid rgba(0,212,255,0.3)' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-5 pb-3">
+                            <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                {editorMode === 'create' ? <><Plus size={16} style={{ color: 'var(--cyan)' }} /> Añadir partido</> : <><Edit3 size={16} style={{ color: '#FFC107' }} /> Editar partido</>}
+                            </h3>
+                            <button
+                                onClick={closeEditor}
+                                className="p-1 rounded-lg transition-colors"
+                                style={{ color: 'var(--text-3)' }}
+                                onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = ''; }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="px-5 pb-4 space-y-3">
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-3)' }}>{isTennis ? 'Jugador 1' : 'Pareja 1'}</label>
+                                <select
+                                    value={editTeam1}
+                                    onChange={e => setEditTeam1(e.target.value)}
+                                    className="cyber-input text-sm w-full h-10 cursor-pointer"
+                                    style={{ padding: '0 28px 0 0.75rem' }}
+                                >
+                                    <option value="">— Selecciona —</option>
+                                    {sortedTeams.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}{t.group ? ` · ${t.group}` : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-3)' }}>{isTennis ? 'Jugador 2' : 'Pareja 2'}</label>
+                                <select
+                                    value={editTeam2}
+                                    onChange={e => setEditTeam2(e.target.value)}
+                                    className="cyber-input text-sm w-full h-10 cursor-pointer"
+                                    style={{ padding: '0 28px 0 0.75rem' }}
+                                >
+                                    <option value="">— Selecciona —</option>
+                                    {sortedTeams.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}{t.group ? ` · ${t.group}` : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-3)' }}>Horario</label>
+                                <select
+                                    value={editSlot}
+                                    onChange={e => setEditSlot(e.target.value)}
+                                    className="cyber-input text-sm w-full h-10 cursor-pointer"
+                                    style={{ padding: '0 28px 0 0.75rem' }}
+                                >
+                                    <option value="">— Selecciona —</option>
+                                    {currentSlots.map(s => (
+                                        <option key={s.id} value={s.id}>{s.day} {s.hour}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap gap-2 px-5 pb-5 justify-between items-center">
+                            {editorMode === 'edit' ? (
+                                <button
+                                    onClick={handleDeleteMatch}
+                                    disabled={savingEdit}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-all disabled:opacity-50"
+                                    style={{ background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.4)', color: '#ff6b6b' }}
+                                >
+                                    <Trash2 size={14} /> Eliminar
+                                </button>
+                            ) : <span />}
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={closeEditor}
+                                    disabled={savingEdit}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleSaveEditor}
+                                    disabled={savingEdit}
+                                    className="px-4 py-2 rounded-lg text-sm font-bold text-white transition-all shadow-lg disabled:opacity-50"
+                                    style={{ background: 'linear-gradient(135deg, #0099cc, #00d4ff)', border: '1px solid var(--cyan)' }}
+                                >
+                                    {savingEdit ? 'Guardando…' : (editorMode === 'create' ? 'Crear partido' : 'Guardar cambios')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 });
@@ -910,7 +1111,7 @@ const HistoryView = memo(({ matches, currentSlots, teams }) => {
 });
 
 // --- StatsView ---
-const StatsView = memo(({ matches, teams, isAdmin }) => {
+const StatsView = memo(({ matches, teams, isAdmin, loading }) => {
     const { user } = useAuth();
     const [selectedTeamId, setSelectedTeamId] = useState(() => {
         const stored = localStorage.getItem('myTeamId');
@@ -978,20 +1179,27 @@ const StatsView = memo(({ matches, teams, isAdmin }) => {
                 <label className="block text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-3)' }}>
                     {isAdmin ? 'Seleccionar jugador / pareja' : 'Tu equipo'}
                 </label>
-                <select
-                    value={selectedTeamId || ''}
-                    onChange={e => {
-                        const val = e.target.value ? parseInt(e.target.value) : null;
-                        setSelectedTeamId(val);
-                        if (!isAdmin && val) localStorage.setItem('myTeamId', String(val));
-                    }}
-                    className="cyber-input w-full p-3 rounded-xl"
-                >
-                    <option value="">Selecciona un jugador / pareja...</option>
-                    {sortedTeams.map(t => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                </select>
+                {loading && teams.length === 0 ? (
+                    <div className="flex items-center gap-2 p-3 text-sm" style={{ color: 'var(--text-3)' }}>
+                        <div className="w-4 h-4 rounded-full border-2 animate-spin shrink-0" style={{ borderColor: 'var(--border-hi)', borderTopColor: 'var(--cyan)' }} />
+                        Cargando jugadores...
+                    </div>
+                ) : (
+                    <select
+                        value={selectedTeamId || ''}
+                        onChange={e => {
+                            const val = e.target.value ? parseInt(e.target.value) : null;
+                            setSelectedTeamId(val);
+                            if (!isAdmin && val) localStorage.setItem('myTeamId', String(val));
+                        }}
+                        className="cyber-input w-full p-3 rounded-xl"
+                    >
+                        <option value="">Selecciona un jugador / pareja...</option>
+                        {sortedTeams.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                    </select>
+                )}
             </div>
 
             {!selectedTeamId && (
@@ -1202,10 +1410,10 @@ const CalendarView = memo(({ matches, currentSlots }) => {
     );
 });
 
-export default function Dashboard({ onNavigate, currentPath }) {
+export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onToggleTheme }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, appSettings, currentSlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, importPlayers, deleteTeam, clearAllData } = useData();
+    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, importPlayers, deleteTeam, clearAllData } = useData();
     const { unreadCount } = useNotifications();
 
     // Navigation State
@@ -1230,6 +1438,9 @@ export default function Dashboard({ onNavigate, currentPath }) {
     // Toggle vista admin/jugador (solo para admins reales)
     const [previewAsPlayer, setPreviewAsPlayer] = useState(false);
 
+    // Custom confirm/alert dialog
+    const { confirm: showConfirm, ConfirmDialogEl } = useConfirm();
+
     // Derived Data
     const teams = data?.teams || [];
     const matches = data?.matches || [];
@@ -1245,13 +1456,25 @@ export default function Dashboard({ onNavigate, currentPath }) {
         }
     }, [user, setRole]);
 
-    // Scroll active tab into view when it changes
+    // Scroll active tab into view when it changes + scroll indicator
     const tabsNavRef = useRef(null);
     useEffect(() => {
         if (!tabsNavRef.current) return;
         const activeBtn = tabsNavRef.current.querySelector('[data-tab="' + activeTab + '"]');
         if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }, [activeTab]);
+
+    useEffect(() => {
+        const el = tabsNavRef.current;
+        if (!el) return;
+        const checkScroll = () => {
+            const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 8;
+            el.classList.toggle('scrolled-end', atEnd);
+        };
+        checkScroll();
+        el.addEventListener('scroll', checkScroll, { passive: true });
+        return () => el.removeEventListener('scroll', checkScroll);
+    }, [sport, activeTab]);
 
     // Initialize Courts
     useEffect(() => {
@@ -1265,7 +1488,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
 
     // --- Actions ---
 
-    const handleBulkImport = () => {
+    const handleBulkImport = async () => {
         if (!importText.trim()) return;
 
         // Parse text
@@ -1281,11 +1504,12 @@ export default function Dashboard({ onNavigate, currentPath }) {
         }).filter(p => p.name); // Filter empty lines
 
         if (players.length === 0) {
-            alert("No se detectaron datos válidos.");
+            await showConfirm({ title: 'Sin datos', message: 'No se detectaron datos válidos.', cancelText: null, variant: 'warning' });
             return;
         }
 
-        if (confirm(`¿Importar ${players.length} jugadores?`)) {
+        const ok = await showConfirm({ title: 'Importar jugadores', message: `¿Importar ${players.length} jugadores?`, confirmText: 'Importar', variant: 'info' });
+        if (ok) {
             importPlayers(players);
             setShowImportModal(false);
             setImportText("");
@@ -1381,25 +1605,39 @@ export default function Dashboard({ onNavigate, currentPath }) {
         saveMatchResult(matchId, score, winnerId, loserWonSet);
     }, [isAdmin, saveMatchResult]);
 
-    const postponeMatchHandler = useCallback((matchId) => {
+    const postponeMatchHandler = useCallback(async (matchId) => {
         if (!isAdmin) return;
-        if (confirm("¿Seguro que quieres aplazar este partido?")) {
+        const ok = await showConfirm({ title: 'Aplazar partido', message: '¿Seguro que quieres aplazar este partido?', confirmText: 'Aplazar', variant: 'warning' });
+        if (ok) {
             postponeMatch(matchId);
         }
-    }, [isAdmin, postponeMatch]);
+    }, [isAdmin, postponeMatch, showConfirm]);
 
-    const registerWalkoverHandler = useCallback((matchId, winnerId) => {
+    const registerWalkoverHandler = useCallback(async (matchId, winnerId) => {
         if (!isAdmin) return;
         const sportLabel = isTennis ? 'tenis' : 'pádel';
-        const notified = isTennis
-            ? false // en tenis no hay distinción de aviso en puntos
-            : confirm(`¿El jugador/pareja ausente avisó con más de 48 h de antelación?\n\n• SÍ → 0 puntos (${sportLabel})\n• NO → -1 punto penalización`);
+        let notified = false;
+        if (!isTennis) {
+            notified = await showConfirm({
+                title: 'Aviso de ausencia',
+                message: `¿El jugador/pareja ausente avisó con más de 48 h de antelación?\n\n• SÍ → 0 puntos (${sportLabel})\n• NO → -1 punto penalización`,
+                confirmText: 'Sí, avisó',
+                cancelText: 'No avisó',
+                variant: 'warning'
+            });
+        }
         const loserPtsMsg = isTennis ? '0 puntos' : (notified ? '+0 puntos' : '-1 punto (sin aviso)');
         const winnerPtsMsg = '+4 puntos';
-        if (confirm(`¿Confirmar W.O.?\nGanador: ${winnerPtsMsg} · Perdedor: ${loserPtsMsg}`)) {
+        const ok = await showConfirm({
+            title: 'Confirmar W.O.',
+            message: `¿Confirmar W.O.?\nGanador: ${winnerPtsMsg}\nPerdedor: ${loserPtsMsg}`,
+            confirmText: 'Confirmar W.O.',
+            variant: 'danger'
+        });
+        if (ok) {
             registerWalkover(matchId, winnerId, notified);
         }
-    }, [isAdmin, isTennis, registerWalkover]);
+    }, [isAdmin, isTennis, registerWalkover, showConfirm]);
 
     const renderContent = () => {
         if (!sport) {
@@ -1415,7 +1653,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
                     <div className="flex items-end justify-between">
                         <div>
                             <p className="text-xs uppercase tracking-widest mb-1 capitalize" style={{ color: 'var(--text-3)' }}>{dateStr}</p>
-                            <h2 className="text-3xl font-bold text-white">
+                            <h2 className="text-2xl md:text-3xl font-bold text-white">
                                 {greeting}, <span className="text-brand-gradient">{user?.name?.split(' ')[0]}</span> 👋
                             </h2>
                             <p className="mt-1 text-sm" style={{ color: 'var(--text-2)' }}>
@@ -1544,13 +1782,13 @@ export default function Dashboard({ onNavigate, currentPath }) {
 
         // Sport Selected View
         return (
-            <div className="max-w-6xl mx-auto">
-                {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} sport={sport} />}
-                {activeTab === 'schedule' && <ScheduleView matches={matches} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onClearAll={clearAllData} />}
-                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} />}
+            <div className="w-full max-w-6xl mx-auto">
+                {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} sport={sport} showConfirm={showConfirm} />}
+                {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onClearAll={clearAllData} showConfirm={showConfirm} />}
+                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} />}
-                {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} />}
+                {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}
                 {activeTab === 'calendar' && <CalendarView matches={matches} currentSlots={currentSlots} />}
                 {activeTab === 'standings' && (() => {
                     const GROUP_COLORS = [
@@ -1562,6 +1800,12 @@ export default function Dashboard({ onNavigate, currentPath }) {
                     ];
                     const groups = [...new Set(teams.map(t => t.group || 'General').filter(Boolean))].sort();
                     const curGroup = (activeStandingsGroup && groups.includes(activeStandingsGroup)) ? activeStandingsGroup : groups[0] || null;
+                    if (loading && groups.length === 0) return (
+                        <div className="flex items-center justify-center gap-2 py-16" style={{ color: 'var(--text-3)' }}>
+                            <div className="w-5 h-5 rounded-full border-2 animate-spin shrink-0" style={{ borderColor: 'var(--border-hi)', borderTopColor: 'var(--cyan)' }} />
+                            Cargando ranking...
+                        </div>
+                    );
                     if (groups.length === 0) return <div className="text-center py-12" style={{ color: 'var(--text-3)' }}>No hay jugadores registrados en el ranking.</div>;
                     const colorIdx = groups.indexOf(curGroup) % GROUP_COLORS.length;
                     const color = GROUP_COLORS[colorIdx];
@@ -1676,7 +1920,8 @@ export default function Dashboard({ onNavigate, currentPath }) {
     };
 
     return (
-        <div className="min-h-screen font-sans text-white flex" style={{ background: 'var(--bg-deepest)' }}>
+        <div className="min-h-screen font-sans text-white flex overflow-x-hidden" style={{ background: 'var(--bg-deepest)' }}>
+            {ConfirmDialogEl}
             {showImportModal && <ImportModal importText={importText} setImportText={setImportText} setShowImportModal={setShowImportModal} handleBulkImport={handleBulkImport} />}
             {chatMatch && <MatchChat match={chatMatch} onClose={() => setChatMatch(null)} />}
 
@@ -1931,13 +2176,24 @@ export default function Dashboard({ onNavigate, currentPath }) {
                             {previewAsPlayer ? '👤 Vista Jugador (activa)' : '🔧 Ver como Jugador'}
                         </button>
                     )}
-                    <button onClick={logout} className="w-full flex items-center gap-2 justify-center px-4 py-2 rounded-lg transition-all text-sm"
-                        style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: 'var(--text-2)' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(229,57,53,0.2)'; e.currentTarget.style.color = 'white'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(229,57,53,0.08)'; e.currentTarget.style.color = 'var(--text-2)'; }}
-                    >
-                        <LogOut size={16} /> Cerrar Sesión
-                    </button>
+                    <div className="flex gap-2">
+                        <button onClick={onToggleTheme}
+                            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg transition-all text-sm flex-shrink-0"
+                            style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,212,255,0.14)'; e.currentTarget.style.color = 'var(--cyan)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,212,255,0.06)'; e.currentTarget.style.color = 'var(--text-2)'; }}
+                            title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+                        >
+                            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                        </button>
+                        <button onClick={logout} className="flex-1 flex items-center gap-2 justify-center px-4 py-2 rounded-lg transition-all text-sm"
+                            style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: 'var(--text-2)' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(229,57,53,0.2)'; e.currentTarget.style.color = 'white'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(229,57,53,0.08)'; e.currentTarget.style.color = 'var(--text-2)'; }}
+                        >
+                            <LogOut size={16} /> Cerrar Sesión
+                        </button>
+                    </div>
                     {/* Crédito */}
                     <div className="mt-3 pt-3 text-center" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                         <p className="text-xs mb-1" style={{ color: 'var(--text-3)' }}>Hecho por</p>
@@ -1955,7 +2211,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 md:ml-64 flex flex-col min-h-screen">
+            <div className="flex-1 md:ml-64 flex flex-col min-h-screen w-full overflow-x-hidden">
 
                 {/* Mobile Header */}
                 <header className="md:hidden p-4 flex justify-between items-center sticky top-0 z-30"
@@ -1978,6 +2234,9 @@ export default function Dashboard({ onNavigate, currentPath }) {
                                     {unreadCount > 9 ? '9+' : unreadCount}
                                 </span>
                             )}
+                        </button>
+                        <button onClick={onToggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-2)' }} title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
+                            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
                         </button>
                         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="transition-colors p-1" style={{ color: 'var(--text-2)' }}>
                             {isMobileMenuOpen ? <X /> : <Menu />}
@@ -2035,7 +2294,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
 
                 {/* Top Bar (Contextual) */}
                 {sport && (
-                    <div className="sticky top-0 md:top-0 z-10 px-6 py-3 flex items-center justify-between"
+                    <div className="sticky top-0 z-10 px-3 md:px-6 py-2 md:py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
                         style={{ background: 'rgba(6,13,26,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}>
                         <div className="flex items-center gap-4">
                             <h2 className="text-lg font-bold text-white capitalize flex items-center gap-2">
@@ -2058,7 +2317,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
                         </div>
 
                         {/* Sub-navigation Tabs */}
-                        <div ref={tabsNavRef} className="flex gap-1 p-1 rounded-xl overflow-x-auto" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', scrollbarWidth: 'none' }}>
+                        <div ref={tabsNavRef} className="flex gap-1 p-1 rounded-xl overflow-x-auto scroll-tabs-container w-full md:w-auto" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', scrollbarWidth: 'none' }}>
                             {!isAdmin && (
                                 <button
                                     data-tab="availability"
@@ -2147,7 +2406,7 @@ export default function Dashboard({ onNavigate, currentPath }) {
                     </div>
                 )}
 
-                <main className="p-6 flex-1 overflow-y-auto" style={{ background: 'var(--bg-deepest)' }}>
+                <main className="p-3 md:p-6 flex-1 overflow-y-auto overflow-x-hidden" style={{ background: 'var(--bg-deepest)' }}>
                     {renderContent()}
                 </main>
             </div>

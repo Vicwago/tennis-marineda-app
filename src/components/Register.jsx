@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { User, Mail, Lock, Activity, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, Mail, Lock, Activity, Eye, EyeOff, CheckCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import logoUrl from '../assets/logo.png';
 
@@ -16,8 +16,15 @@ export default function Register({ onNavigateToLogin }) {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [slowLoad, setSlowLoad] = useState(false);
     const [success, setSuccess] = useState(false);
     const [needsConfirmation, setNeedsConfirmation] = useState(false);
+
+    useEffect(() => {
+        if (!isLoading) { setSlowLoad(false); return; }
+        const t = setTimeout(() => setSlowLoad(true), 8000);
+        return () => clearTimeout(t);
+    }, [isLoading]);
 
     const isTennis = form.sport === 'tennis';
 
@@ -31,7 +38,8 @@ export default function Register({ onNavigateToLogin }) {
         if (form.name.trim().length < 3) return 'El nombre debe tener al menos 3 caracteres.';
         if (!form.email.trim()) return 'El email es obligatorio.';
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'El email no es válido.';
-        if (form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+        if (form.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
+        if (!/[a-zA-Z]/.test(form.password) || !/[0-9]/.test(form.password)) return 'La contraseña debe incluir letras y números.';
         if (form.password !== form.confirmPassword) return 'Las contraseñas no coinciden.';
         return null;
     };
@@ -223,7 +231,7 @@ export default function Register({ onNavigateToLogin }) {
                             <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: form.password ? 'var(--cyan)' : 'var(--text-3)' }} />
                             <input
                                 type={showPassword ? 'text' : 'password'}
-                                placeholder="Mínimo 6 caracteres"
+                                placeholder="Mínimo 8 caracteres, letras y números"
                                 value={form.password}
                                 onChange={e => handleChange('password', e.target.value)}
                                 className="cyber-input w-full pl-9 pr-10 py-3 rounded-xl text-sm"
@@ -251,6 +259,15 @@ export default function Register({ onNavigateToLogin }) {
                         </div>
                     </div>
 
+                    {/* Hint si Supabase tarda en despertar */}
+                    {slowLoad && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
+                            style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)', color: 'var(--text-2)' }}>
+                            <Loader2 className="animate-spin w-4 h-4 shrink-0" style={{ color: 'var(--cyan)' }} />
+                            Conectando con el servidor... La primera vez del día puede tardar hasta 30 segundos.
+                        </div>
+                    )}
+
                     {/* Submit */}
                     <button
                         type="submit"
@@ -259,10 +276,7 @@ export default function Register({ onNavigateToLogin }) {
                     >
                         {isLoading ? (
                             <span className="flex items-center justify-center gap-2">
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                </svg>
+                                <Loader2 className="animate-spin w-4 h-4" />
                                 Creando cuenta...
                             </span>
                         ) : 'Crear cuenta'}
