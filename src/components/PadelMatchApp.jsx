@@ -268,8 +268,19 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onClearAll, showConfirm }) => {
+const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, showConfirm }) => {
     const [selectedGroup, setSelectedGroup] = useState('Todos');
+    const [addOpen, setAddOpen] = useState(false);
+    const [addName, setAddName] = useState('');
+    const [addGroup, setAddGroup] = useState('');
+    const [addBusy, setAddBusy] = useState(false);
+    const submitAdd = async () => {
+        if (!addName.trim()) return;
+        setAddBusy(true);
+        try { await onAddTeam({ name: addName, group: addGroup }); setAddName(''); setAddGroup(''); setAddOpen(false); }
+        catch (e) { showConfirm({ title: 'No se pudo añadir', message: e?.message || String(e), cancelText: null, variant: 'danger' }); }
+        finally { setAddBusy(false); }
+    };
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
     const filteredTeams = useMemo(
@@ -297,6 +308,9 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                     </select>
                     {isAdmin && (
                         <>
+                            <Button variant="primary" size="sm" onClick={() => setAddOpen(v => !v)} title="Añadir un jugador a mano">
+                                <Plus size={18} /> Añadir
+                            </Button>
                             <Button variant="success" size="sm" onClick={() => setShowImportModal(true)} title="Importar jugadores desde Excel/CSV">
                                 <Upload size={18} />
                             </Button>
@@ -320,6 +334,26 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
             <datalist id="group-options">
                 {groups.filter(g => g !== 'Todos').map(g => <option key={g} value={g} />)}
             </datalist>
+
+            {/* Alta manual de jugador (admin) */}
+            {isAdmin && addOpen && (
+                <div className="p-4 rounded-xl animate-in fade-in slide-in-from-top-2" style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.25)' }}>
+                    <p className="text-sm font-bold mb-3 text-white">Añadir {isTennis ? 'jugador' : 'pareja'} a mano</p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <input autoFocus value={addName} onChange={e => setAddName(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') submitAdd(); }}
+                            placeholder={isTennis ? 'Nombre y apellido' : 'Jugador 1 / Jugador 2'}
+                            className="cyber-input flex-1 px-3 py-2 rounded-lg text-sm" />
+                        <input list="group-options" value={addGroup} onChange={e => setAddGroup(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') submitAdd(); }}
+                            placeholder="Grupo (opcional)"
+                            className="cyber-input px-3 py-2 rounded-lg text-sm sm:w-40" />
+                        <Button size="sm" onClick={submitAdd} disabled={addBusy || !addName.trim()}>{addBusy ? 'Añadiendo...' : 'Añadir'}</Button>
+                        <Button size="sm" variant="secondary" onClick={() => { setAddOpen(false); setAddName(''); setAddGroup(''); }}>Cancelar</Button>
+                    </div>
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>Sin cuenta: tú le gestionas la disponibilidad. Podrá vincularse luego si se registra con el mismo nombre.</p>
+                </div>
+            )}
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {filteredTeams.map(team => (
@@ -1530,7 +1564,7 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onToggleTheme }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
+    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
     const [showUsersModal, setShowUsersModal] = useState(false);
     const { unreadCount } = useNotifications();
 
@@ -1948,7 +1982,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             <div className="w-full max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} sport={sport} showConfirm={showConfirm} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onClearAll={clearAllData} showConfirm={showConfirm} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} showConfirm={showConfirm} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { showConfirm({ title: 'Error', message: e?.message || String(e), cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}

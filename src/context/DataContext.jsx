@@ -773,6 +773,25 @@ export const DataProvider = ({ children }) => {
     };
 
     // Borra SOLO el ámbito actual (deporte + categoría). Antes borraba las dos categorías de tenis a la vez.
+    // Crear un jugador/pareja a mano (admin) — sin cuenta vinculada. Para quien no
+    // puede o no quiere registrarse; el admin le gestiona la disponibilidad.
+    const createManualTeam = async ({ name, group }) => {
+        const clean = (name || '').trim();
+        if (!clean) throw new Error('El nombre no puede estar vacío.');
+        const insert = {
+            name: clean,
+            sport,
+            category: sport === 'tennis' ? tennisCategory : null,
+            group_name: (group || '').trim() || null,
+            points: 0,
+            matches_played: 0
+        };
+        const { data, error } = await supabase.from('teams').insert(insert).select().single();
+        if (error) throw error;
+        setTeams(prev => [...prev, { ...data, group: data.group_name, matchesPlayed: 0, points: 0, week_off: false, availability: [] }]);
+        return data;
+    };
+
     // Corregir un resultado ya registrado: reabre el partido para volver a introducirlo.
     const reopenMatch = async (matchId) => {
         const { error } = await supabase.from('matches')
@@ -986,6 +1005,7 @@ export const DataProvider = ({ children }) => {
         updateMatch,
         deleteMatch,
         reopenMatch,
+        createManualTeam,
         importPlayers,
         deleteTeam,
         clearAllData,
