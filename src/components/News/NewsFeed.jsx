@@ -107,6 +107,13 @@ const NewsFeed = ({ onBack }) => {
                 </div>
             )}
 
+            {articles.length === 0 && !showEditor && (
+                <div className="text-center py-16 rounded-2xl" style={{ border: '2px dashed var(--border, #334155)', color: 'var(--text-3, #94a3b8)' }}>
+                    <Newspaper size={36} className="mx-auto mb-3" />
+                    <p className="font-medium">Todavía no hay noticias publicadas.</p>
+                    {user?.role === 'admin' && <p className="text-sm mt-1">Pulsa "Nueva Noticia" para publicar la primera.</p>}
+                </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {articles.map(article => (
                     <ArticleCard

@@ -64,15 +64,28 @@ export const AuthProvider = ({ children }) => {
 
         checkSession();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        // ⚠️ El callback de onAuthStateChange DEBE ser síncrono y no llamar a otras
+        // funciones de Supabase con await dentro (getSession/from...): supabase-js
+        // retiene un lock interno durante el callback y se produce un deadlock
+        // (el login se quedaba "Conectando..." aunque el servidor respondía en ~200 ms).
+        // Solución oficial: fijar el usuario básico al instante y enriquecer el perfil
+        // FUERA del callback con setTimeout(0).
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
             if (session?.user) {
-                const userWithProfile = await fetchProfile(session.user);
-                setUser(userWithProfile);
+                // Usuario inmediato con rol por defecto (evita pantalla en blanco)
+                setUser(prev => (prev && prev.id === session.user.id) ? prev : {
+                    ...session.user, name: session.user.email, role: 'player'
+                });
+                setLoading(false);
+                setTimeout(async () => {
+                    const withProfile = await fetchProfile(session.user);
+                    if (withProfile) setUser(withProfile);
+                }, 0);
             } else {
                 setUser(null);
+                setLoading(false);
             }
-            setLoading(false);
         });
 
         return () => subscription.unsubscribe();
@@ -97,9 +110,15 @@ export const AuthProvider = ({ children }) => {
         if (error) throw error;
     };
 
-    const register = async (name, email, password, sport, category = null) => {
-        // Los datos se pasan como metadata para que el trigger de BD
-        // cree automáticamente el perfil y equipo (bypassa RLS)
+    const register = async (name, email, password, sport, category = null, inviteCode = '') => {
+        // 1) Código de invitación del club (se valida aquí para dar un mensaje claro
+        //    y lo vuelve a comprobar el trigger de BD por si alguien se salta la app)
+        const { data: codeOk, error: codeErr } = await supabase.rpc('check_invite_code', { p_code: inviteCode.trim() });
+        if (codeErr) throw codeErr;
+        if (!codeOk) { const e = new Error('INVITE_CODE_INVALID'); e.code = 'INVITE_CODE_INVALID'; throw e; }
+
+        // 2) Los datos se pasan como metadata para que el trigger de BD
+        //    cree automáticamente el perfil y equipo (bypassa RLS)
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
@@ -107,11 +126,15 @@ export const AuthProvider = ({ children }) => {
                 data: {
                     full_name: name,
                     sport,
-                    category: sport === 'tennis' ? category : null
+                    category: sport === 'tennis' ? category : null,
+                    invite_code: inviteCode.trim()
                 }
             }
         });
-        if (error) throw error;
+        if (error) {
+            if (/database error saving new user/i.test(error.message)) { const e = new Error('INVITE_CODE_INVALID'); e.code = 'INVITE_CODE_INVALID'; throw e; }
+            throw error;
+        }
 
         const userId = data.user?.id;
         if (!userId) throw new Error('No se pudo crear el usuario.');

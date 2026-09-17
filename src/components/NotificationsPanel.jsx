@@ -20,7 +20,10 @@ const timeAgo = (dateStr) => {
 const typeIcon = (type) => {
     switch (type) {
         case 'match_assigned': return <Calendar size={14} />;
+        case 'match_updated': return <Calendar size={14} />;
+        case 'match_cancelled': return <BellOff size={14} />;
         case 'match_result': return <Trophy size={14} />;
+        case 'result_saved': return <Trophy size={14} />;
         case 'match_comment': return <MessageSquare size={14} />;
         default: return <Bell size={14} />;
     }
@@ -29,7 +32,10 @@ const typeIcon = (type) => {
 const typeColor = (type) => {
     switch (type) {
         case 'match_assigned': return 'var(--cyan)';
+        case 'match_updated': return '#FFC107';
+        case 'match_cancelled': return '#ff6b6b';
         case 'match_result': return '#FFC107';
+        case 'result_saved': return '#00ff87';
         case 'match_comment': return '#8b5cf6';
         default: return 'var(--text-2)';
     }

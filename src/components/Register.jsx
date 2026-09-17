@@ -11,7 +11,9 @@ export default function Register({ onNavigateToLogin }) {
         password: '',
         confirmPassword: '',
         sport: 'tennis',
-        category: 'adults'
+        category: 'adults',
+        inviteCode: '',
+        consent: false
     });
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
@@ -38,9 +40,13 @@ export default function Register({ onNavigateToLogin }) {
         if (form.name.trim().length < 3) return 'El nombre debe tener al menos 3 caracteres.';
         if (!form.email.trim()) return 'El email es obligatorio.';
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'El email no es válido.';
+        if (!form.inviteCode.trim()) return 'Introduce el código de invitación del club.';
         if (form.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
         if (!/[a-zA-Z]/.test(form.password) || !/[0-9]/.test(form.password)) return 'La contraseña debe incluir letras y números.';
         if (form.password !== form.confirmPassword) return 'Las contraseñas no coinciden.';
+        if (!form.consent) return isTennis && form.category === 'juveniles'
+            ? 'Un tutor legal debe autorizar el registro del menor (marca la casilla).'
+            : 'Debes aceptar el uso de tus datos para organizar la liga (marca la casilla).';
         return null;
     };
 
@@ -56,13 +62,16 @@ export default function Register({ onNavigateToLogin }) {
                 form.email.trim(),
                 form.password,
                 form.sport,
-                isTennis ? form.category : null
+                isTennis ? form.category : null,
+                form.inviteCode
             );
             setSuccess(true);
         } catch (err) {
             if (err.needsConfirmation || err.message === 'CONFIRM_EMAIL') {
                 // Cuenta creada pero requiere confirmación de email
                 setNeedsConfirmation(true);
+            } else if (err.code === 'INVITE_CODE_INVALID' || err.message === 'INVITE_CODE_INVALID') {
+                setError('Código de invitación incorrecto. Pídeselo a la escuela.');
             } else if (err.message?.includes('already registered') || err.message?.includes('User already registered')) {
                 setError('Este email ya tiene una cuenta. Inicia sesión.');
             } else {
@@ -193,6 +202,21 @@ export default function Register({ onNavigateToLogin }) {
                         </div>
                     </div>
 
+                    {/* Código de invitación del club */}
+                    <div>
+                        <label htmlFor="reg-invite" className="block text-xs font-bold mb-1.5 uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Código de invitación</label>
+                        <input
+                            id="reg-invite"
+                            type="text"
+                            placeholder="Te lo da la escuela"
+                            value={form.inviteCode}
+                            onChange={e => handleChange('inviteCode', e.target.value.toUpperCase())}
+                            className="cyber-input w-full px-4 py-3 rounded-xl text-base tracking-widest"
+                            autoComplete="off"
+                            required
+                        />
+                    </div>
+
                     {/* Deporte */}
                     <div>
                         <label className="block text-xs font-bold mb-1.5 uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Deporte</label>
@@ -258,6 +282,16 @@ export default function Register({ onNavigateToLogin }) {
                             />
                         </div>
                     </div>
+
+                    {/* Consentimiento (RGPD / tutor si es menor) */}
+                    <label className="flex items-start gap-2 text-xs cursor-pointer select-none" style={{ color: 'var(--text-2)' }}>
+                        <input type="checkbox" checked={form.consent} onChange={e => handleChange('consent', e.target.checked)} className="mt-0.5 w-4 h-4 accent-cyan-400 shrink-0" />
+                        <span>
+                            {isTennis && form.category === 'juveniles'
+                                ? 'Soy el tutor legal del jugador (o tengo su autorización) y acepto que la escuela use su nombre y disponibilidad para organizar la liga.'
+                                : 'Acepto que la escuela use mi nombre y mi disponibilidad para organizar la liga y mostrar el ranking a los demás jugadores.'}
+                        </span>
+                    </label>
 
                     {/* Hint si Supabase tarda en despertar */}
                     {slowLoad && (
