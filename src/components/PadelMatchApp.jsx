@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
-import * as XLSX from 'xlsx';
+// xlsx se importa bajo demanda dentro de handleFileUpload (evita ~400 KB en la carga inicial)
 import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
-import { useData } from '../context/DataContext';
+import { useData, nextDateForSlot } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import NotificationsPanel from './NotificationsPanel';
@@ -17,7 +17,7 @@ const Card = ({ children, className = "" }) => (
     </div>
 );
 
-const Button = ({ children, onClick, variant = "primary", className = "", disabled = false, size = "md" }) => {
+const Button = ({ children, onClick, variant = "primary", className = "", disabled = false, size = "md", title, style, type = "button" }) => {
     const baseStyle = "rounded-lg font-medium transition-all flex items-center gap-2 justify-center disabled:opacity-50 disabled:cursor-not-allowed";
     const sizes = {
         sm: "px-2 py-1 text-xs",
@@ -33,7 +33,7 @@ const Button = ({ children, onClick, variant = "primary", className = "", disabl
         danger: "text-red-400 hover:text-red-300"
     };
     return (
-        <button onClick={onClick} className={`${baseStyle} ${sizes[size]} ${variants[variant]} ${className}`} disabled={disabled}>
+        <button type={type} title={title} style={style} onClick={onClick} className={`${baseStyle} ${sizes[size]} ${variants[variant]} ${className}`} disabled={disabled}>
             {children}
         </button>
     );
@@ -55,8 +55,10 @@ const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulk
         // Excel .xlsx / .xls
         if (file.name.match(/\.(xlsx|xls)$/i)) {
             const reader = new FileReader();
-            reader.onload = (ev) => {
+            reader.onload = async (ev) => {
                 try {
+                    const mod = await import('xlsx');
+                    const XLSX = mod.default ?? mod;
                     const workbook = XLSX.read(ev.target.result, { type: 'array' });
                     const sheet = workbook.Sheets[workbook.SheetNames[0]];
                     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
@@ -303,8 +305,8 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                 size="sm"
                                 title="Borrar todos los jugadores y partidos"
                                 onClick={async () => {
-                                    const ok = await showConfirm({ title: 'Borrar todo', message: '¿Borrar TODOS los jugadores y partidos?\nEsta acción no se puede deshacer.', confirmText: 'Borrar todo', variant: 'danger' });
-                                    if (ok) onClearAll();
+                                    const ok = await showConfirm({ title: 'Borrar todo', message: `¿Borrar TODOS los jugadores y partidos de ${isTennis ? 'ESTA categoría de tenis' : 'pádel'}?\nLos jugadores registrados perderán su equipo. Esta acción no se puede deshacer.`, confirmText: 'Borrar todo', variant: 'danger' });
+                                    if (ok) { try { await onClearAll(); } catch (e) { showConfirm({ title: 'No se pudo borrar', message: e?.message || String(e), cancelText: null, variant: 'danger' }); } }
                                 }}
                             >
                                 <X size={18} />
@@ -435,7 +437,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                             <Settings size={16} />
                                         </button>
                                         <button
-                                            onClick={async () => { const ok = await showConfirm({ title: 'Eliminar jugador', message: `¿Eliminar a "${team.name}"?\nEsta acción no se puede deshacer.`, confirmText: 'Eliminar', variant: 'danger' }); if (ok) onDeleteTeam(team.id); }}
+                                            onClick={async () => { const ok = await showConfirm({ title: 'Eliminar jugador', message: `¿Eliminar a "${team.name}"?\nEsta acción no se puede deshacer.`, confirmText: 'Eliminar', variant: 'danger' }); if (ok) { try { await onDeleteTeam(team.id); } catch (e) { showConfirm({ title: 'No se puede eliminar', message: e?.message || String(e), cancelText: null, variant: 'warning' }); } } }}
                                             className="p-2 rounded-full transition-all"
                                             style={{ color: 'var(--text-3)' }}
                                             onMouseEnter={e => { e.currentTarget.style.color = '#ff4444'; e.currentTarget.style.background = 'rgba(255,68,68,0.1)'; }}
@@ -646,9 +648,19 @@ const MyAvailabilityView = memo(({ teams, currentSlots, sport, showConfirm }) =>
 });
 
 const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, onChatClick, isTennis, appSettings, updateAppSettings, showConfirm }) => {
-    const activeMatches = useMemo(() => matches.filter(m => !m.completed), [matches]);
+    const { user } = useAuth();
+    // Equipo del usuario logueado (para resaltar "Tu partido" y ponerlo el primero)
+    const myTeamId = useMemo(() => (teams || []).find(t => t.user_id === user?.id)?.id ?? null, [teams, user?.id]);
+    const activeMatches = useMemo(() => {
+        const list = matches.filter(m => !m.completed);
+        if (!myTeamId) return list;
+        const isMine = (m) => (m.t1?.id === myTeamId || m.t2?.id === myTeamId) ? 1 : 0;
+        return [...list].sort((a, b) => isMine(b) - isMine(a));
+    }, [matches, myTeamId]);
     const label = isTennis ? 'jugadores' : 'parejas';
     const [deadlineInput, setDeadlineInput] = useState(appSettings?.availability_deadline_label || '');
+    // Sincronizar el plazo al cambiar de deporte/categoría (antes se inicializaba una sola vez y pisaba el de otra categoría)
+    useEffect(() => { setDeadlineInput(appSettings?.availability_deadline_label || ''); }, [appSettings?.availability_deadline_label]);
     const isLocked = appSettings?.availability_locked;
 
     // ─── Estado del editor de partidos (admin) ────────────────────────
@@ -814,15 +826,23 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                 <div className="grid gap-4 md:grid-cols-2">
                     {activeMatches.map(match => {
                         const slotDetails = currentSlots.find(s => s.id === match.slot);
+                        const mine = !!myTeamId && (match.t1?.id === myTeamId || match.t2?.id === myTeamId);
                         return (
                             <Card key={match.id} className={`flex flex-col overflow-hidden transition-all`} style={{ borderLeft: `3px solid ${match.postponed ? '#F59E0B' : '#E53935'}` }}>
                                 <div className="flex flex-row h-full min-w-0">
                                     <div className="p-2 px-3 flex flex-col justify-center items-center min-w-[64px]" style={{ background: 'rgba(255,255,255,0.03)', borderRight: '1px solid var(--border)' }}>
                                         <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>{slotDetails?.day.substring(0, 3)}</span>
                                         <span className="text-xl font-bold text-white">{slotDetails?.hour}</span>
+                                        {match.date && <span className="text-[10px] font-medium" style={{ color: 'var(--cyan)' }}>{new Date(match.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>}
+                                        {match.court && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-1" style={{ background: 'rgba(255,193,7,0.12)', color: '#FFC107', border: '1px solid rgba(255,193,7,0.3)' }}>Pista {match.court}</span>}
                                         {match.postponed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full mt-2" style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}>APLAZADO</span>}
                                     </div>
                                     <div className="p-3 flex-1 min-w-0 flex flex-col justify-center">
+                                        {mine && (
+                                            <div className="mb-2 text-center">
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(0,212,255,0.15)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.35)' }}>★ Tu partido</span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between items-center mb-4">
                                             <div className="flex-1 text-right pr-3">
                                                 <span className="font-bold text-white block leading-tight">{match.t1.name}</span>
@@ -853,10 +873,14 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                                     </label>
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <Button size="sm" onClick={() => {
-                                                            const score = document.getElementById(`score-${match.id}`).value;
+                                                            const score = document.getElementById(`score-${match.id}`).value.trim();
                                                             const winner = document.getElementById(`winner-${match.id}`).value;
                                                             const loserWonSet = document.getElementById(`loser-set-${match.id}`)?.checked || false;
-                                                            if (score && winner) submitResult(match.id, score, winner, loserWonSet);
+                                                            if (!score || !winner) {
+                                                                showConfirm({ title: 'Faltan datos', message: !winner ? 'Selecciona quién ha ganado.' : 'Escribe el marcador (ej: 6-3 6-4).', cancelText: null, variant: 'warning' });
+                                                                return;
+                                                            }
+                                                            submitResult(match.id, score, Number(winner), loserWonSet);
                                                         }}>OK</Button>
                                                         <Button size="sm" variant="ghost" className="font-medium" style={{ color: '#F59E0B' }} onClick={() => postponeMatch(match.id)}>
                                                             Aplazar
@@ -867,7 +891,7 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                                                 showConfirm({ title: 'Falta ganador', message: 'Selecciona primero quién ha ganado (el que SÍ se presentó).', cancelText: null, variant: 'warning' });
                                                                 return;
                                                             }
-                                                            registerWalkover(match.id, winner);
+                                                            registerWalkover(match.id, Number(winner));
                                                         }}>
                                                             W.O.
                                                         </Button>
@@ -1572,53 +1596,98 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         });
     }, [isAdmin, currentSlots, updateCourtCount]);
 
-    const generateWeeklyScheduleHandler = useCallback(() => {
-        if (!isAdmin) return;
-        let schedule = [];
-        // Excluir jugadores con week_off activo
-        let availableTeams = teams.filter(t => !t.week_off);
-        let scheduledTeamIds = new Set();
-        let weeklyCourts = { ...courtAvailability };
-        const noCourtsConfig = Object.keys(weeklyCourts).length === 0;
-        const matchHistory = {};
-        matches.forEach(m => { matchHistory[`${m.t1.id}-${m.t2.id}`] = true; matchHistory[`${m.t2.id}-${m.t1.id}`] = true; });
-        let possibleMatchups = [];
-        for (let i = 0; i < availableTeams.length; i++) {
-            for (let j = i + 1; j < availableTeams.length; j++) {
-                const t1 = availableTeams[i];
-                const t2 = availableTeams[j];
-                if (matchHistory[`${t1.id}-${t2.id}`]) continue;
-                if (t1.group && t2.group && t1.group !== t2.group) continue;
-                // Si no hay configuración de pistas, ignorar restricción de pistas
-                const validSlots = t1.availability.filter(slot =>
-                    t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0)
-                );
-                if (validSlots.length > 0) {
-                    possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length });
-                }
-            }
-        }
-        possibleMatchups.sort((a, b) => a.difficulty - b.difficulty);
-        possibleMatchups.forEach(match => {
-            if (!scheduledTeamIds.has(match.t1.id) && !scheduledTeamIds.has(match.t2.id)) {
-                const finalSlot = match.validSlots.find(slot => noCourtsConfig || (weeklyCourts[slot] || 0) > 0);
-                if (finalSlot) {
-                    schedule.push({ t1: match.t1, t2: match.t2, slot: finalSlot });
-                    scheduledTeamIds.add(match.t1.id);
-                    scheduledTeamIds.add(match.t2.id);
-                    if (!noCourtsConfig) weeklyCourts[finalSlot]--;
-                }
+    const generatingRef = useRef(false);
+    const generateWeeklyScheduleHandler = useCallback(async () => {
+        if (!isAdmin || generatingRef.current) return;
+        const label = isTennis ? 'jugadores' : 'parejas';
+
+        // ── Guardias (antes: doble clic duplicaba la jornada y sobre-reservaba pistas) ──
+        // 1) Quien ya tiene partido pendiente no entra en la nueva jornada.
+        // 2) Las pistas ocupadas por partidos pendientes se descuentan.
+        // 3) Los jugadores sin grupo no se emparejan (antes cruzaban con cualquier grupo).
+        const pendingByTeam = new Set();
+        const pendingPerSlot = {};
+        matches.forEach(m => {
+            if (!m.completed) {
+                pendingByTeam.add(m.t1.id); pendingByTeam.add(m.t2.id);
+                pendingPerSlot[m.slot] = (pendingPerSlot[m.slot] || 0) + 1;
             }
         });
+        const active = teams.filter(t => !t.week_off);
+        const ungrouped = active.filter(t => !t.group);
+        const withPending = active.filter(t => t.group && pendingByTeam.has(t.id));
+        const eligible = active.filter(t => t.group && !pendingByTeam.has(t.id));
+        const weekOffCount = teams.length - active.length;
 
-        createSchedule(schedule);
+        const ok = await showConfirm({
+            title: 'Generar jornada',
+            message: `Se emparejarán ${eligible.length} ${label} disponibles.` +
+                (withPending.length ? `\n• ${withPending.length} con partido pendiente no entran (registra o aplaza primero).` : '') +
+                (ungrouped.length ? `\n• ${ungrouped.length} sin grupo no entran (asígnales grupo en "Jugadores").` : '') +
+                (weekOffCount ? `\n• ${weekOffCount} con semana libre.` : '') +
+                `\nLas pistas ya ocupadas por partidos pendientes se descuentan.`,
+            confirmText: 'Generar jornada', variant: 'info'
+        });
+        if (!ok) return;
 
-        const label = isTennis ? 'jugadores' : 'parejas';
-        const unassigned = availableTeams.filter(t => !scheduledTeamIds.has(t.id));
-        const weekOffCount = teams.length - availableTeams.length;
-        setGenerationLog(`Jornada generada: ${schedule.length} partidos. Sin asignar: ${unassigned.length} ${label}.${weekOffCount > 0 ? ` (${weekOffCount} no disponibles esta semana)` : ''}`);
-        setActiveTab('schedule');
-    }, [isAdmin, teams, matches, courtAvailability, createSchedule, isTennis]);
+        generatingRef.current = true;
+        try {
+            let schedule = [];
+            let availableTeams = eligible;
+            let scheduledTeamIds = new Set();
+            let weeklyCourts = { ...courtAvailability };
+            const noCourtsConfig = Object.keys(weeklyCourts).length === 0;
+            if (!noCourtsConfig) {
+                Object.entries(pendingPerSlot).forEach(([slot, n]) => { weeklyCourts[slot] = Math.max(0, (weeklyCourts[slot] || 0) - n); });
+            }
+            const matchHistory = {};
+            matches.forEach(m => { matchHistory[`${m.t1.id}-${m.t2.id}`] = true; matchHistory[`${m.t2.id}-${m.t1.id}`] = true; });
+            let possibleMatchups = [];
+            for (let i = 0; i < availableTeams.length; i++) {
+                for (let j = i + 1; j < availableTeams.length; j++) {
+                    const t1 = availableTeams[i];
+                    const t2 = availableTeams[j];
+                    if (matchHistory[`${t1.id}-${t2.id}`]) continue;          // ya se enfrentaron (o tienen partido pendiente entre sí)
+                    if (t1.group !== t2.group) continue;                         // misma división
+                    const validSlots = t1.availability.filter(slot =>
+                        t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0)
+                    );
+                    if (validSlots.length > 0) possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length });
+                }
+            }
+            possibleMatchups.sort((a, b) => a.difficulty - b.difficulty);
+            const assignedPerSlot = {};
+            possibleMatchups.forEach(match => {
+                if (!scheduledTeamIds.has(match.t1.id) && !scheduledTeamIds.has(match.t2.id)) {
+                    const finalSlot = match.validSlots.find(slot => noCourtsConfig || (weeklyCourts[slot] || 0) > 0);
+                    if (finalSlot) {
+                        const n = (assignedPerSlot[finalSlot] = (assignedPerSlot[finalSlot] || 0) + 1);
+                        schedule.push({
+                            t1: match.t1, t2: match.t2, slot: finalSlot,
+                            court: noCourtsConfig ? null : (pendingPerSlot[finalSlot] || 0) + n,   // nº de pista (tras las ya ocupadas)
+                            date: nextDateForSlot(finalSlot)?.toISOString() ?? null,           // fecha real del partido
+                        });
+                        scheduledTeamIds.add(match.t1.id);
+                        scheduledTeamIds.add(match.t2.id);
+                        if (!noCourtsConfig) weeklyCourts[finalSlot]--;
+                    }
+                }
+            });
+
+            await createSchedule(schedule);
+
+            const unassigned = availableTeams.filter(t => !scheduledTeamIds.has(t.id));
+            setGenerationLog(`Jornada generada: ${schedule.length} partidos. Sin rival esta semana: ${unassigned.length} ${label}.` +
+                (withPending.length ? ` ${withPending.length} ya tenían partido pendiente.` : '') +
+                (ungrouped.length ? ` ${ungrouped.length} sin grupo.` : '') +
+                (weekOffCount ? ` ${weekOffCount} con semana libre.` : ''));
+            setActiveTab('schedule');
+        } catch (e) {
+            showConfirm({ title: 'No se pudo generar la jornada', message: e?.message || String(e), cancelText: null, variant: 'danger' });
+        } finally {
+            generatingRef.current = false;
+        }
+    }, [isAdmin, teams, matches, courtAvailability, createSchedule, isTennis, showConfirm]);
 
     const submitResultHandler = useCallback((matchId, score, winnerId, loserWonSet = false) => {
         if (!isAdmin) return;
@@ -1748,7 +1817,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     {/* ── Funcionalidades destacadas ── */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {[
-                            { emoji: '📅', title: 'Jornadas auto.', desc: 'Genera el calendario semanal en un clic.', action: () => { setSport('padel'); setActiveTab('schedule'); } },
+                            { emoji: '📅', title: 'Jornadas auto.', desc: 'Genera el calendario semanal en un clic.', action: () => { setSport('tennis'); setActiveTab('schedule'); } },
                             { emoji: '🏆', title: 'Rankings', desc: 'Clasificaciones actualizadas en tiempo real.', action: () => { setSport('padel'); setActiveTab('standings'); } },
                             { emoji: '📊', title: 'Estadísticas', desc: 'Victorias, rachas y rendimiento personal.', action: () => { setSport('padel'); setActiveTab('stats'); } },
                             { emoji: '📰', title: 'Noticias', desc: 'Últimas novedades de la escuela.', action: () => onNavigate && onNavigate('/noticias') },
@@ -1829,7 +1898,11 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     if (groups.length === 0) return <div className="text-center py-12" style={{ color: 'var(--text-3)' }}>No hay jugadores registrados en el ranking.</div>;
                     const colorIdx = groups.indexOf(curGroup) % GROUP_COLORS.length;
                     const color = GROUP_COLORS[colorIdx];
-                    const groupTeams = teams.filter(t => (t.group || 'General') === curGroup).sort((a, b) => b.points - a.points);
+                    // Desempate: puntos → victorias → menos partidos jugados → nombre
+                    const winsOf = (id) => matches.filter(m => m.completed && m.winner_id === id).length;
+                    const groupTeams = teams.filter(t => (t.group || 'General') === curGroup).sort((a, b) =>
+                        (b.points - a.points) || (winsOf(b.id) - winsOf(a.id)) || ((a.matchesPlayed || 0) - (b.matchesPlayed || 0)) || a.name.localeCompare(b.name)
+                    );
                     return (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
                             {/* Group tabs */}
@@ -2142,7 +2215,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     <div className="pt-4 pb-2 px-4 text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Personal</div>
                     <div className="relative">
                         <button
-                            onClick={() => setShowNotifications(v => !v)}
+                            data-notif-bell="true" onClick={() => setShowNotifications(v => !v)}
                             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
                             style={showNotifications ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.25), rgba(229,57,53,0.1))', border: '1px solid rgba(229,57,53,0.4)', color: 'white' } : { color: 'var(--text-3)' }}
                             onMouseEnter={e => { if (!showNotifications) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'white'; } }}
@@ -2244,7 +2317,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     </div>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => setShowNotifications(v => !v)}
+                            data-notif-bell="true" onClick={() => setShowNotifications(v => !v)}
                             className="relative p-2 rounded-lg transition-colors"
                             style={{ color: 'var(--text-2)' }}
                         >

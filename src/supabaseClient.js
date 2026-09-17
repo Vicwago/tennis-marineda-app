@@ -22,7 +22,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: false,
+        detectSessionInUrl: true,   // necesario para que el enlace de "recuperar contraseña" funcione
         lock: noLock,   // ← Evita bloqueos entre pestañas
     }
 });

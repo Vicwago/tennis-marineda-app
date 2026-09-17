@@ -14,6 +14,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [recoveryMode, setRecoveryMode] = useState(false);
 
     const fetchProfile = async (sessionUser) => {
         if (!sessionUser) return null;
@@ -63,7 +64,8 @@ export const AuthProvider = ({ children }) => {
 
         checkSession();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
             if (session?.user) {
                 const userWithProfile = await fetchProfile(session.user);
                 setUser(userWithProfile);
@@ -131,17 +133,29 @@ export const AuthProvider = ({ children }) => {
         return data;
     };
 
-    const logout = () => {
-        // Limpiar estado local inmediatamente (sin esperar a Supabase)
+    const logout = async () => {
         setUser(null);
-        // Limpiar tokens de localStorage
+        // Revocar la sesión en el servidor ANTES de borrar los tokens locales
+        // (antes se borraban primero y el refresh token seguía siendo válido).
+        try {
+            await Promise.race([
+                supabase.auth.signOut({ scope: 'global' }),
+                new Promise(resolve => setTimeout(resolve, 4000)),
+            ]);
+        } catch (e) { console.warn('[Logout] network:', e.message); }
         try {
             Object.keys(localStorage).forEach(key => {
-                if (key.startsWith('sb-')) localStorage.removeItem(key);
+                if (key.startsWith('sb-') || key === 'myTeamId') localStorage.removeItem(key);
             });
-        } catch (_) {}
-        // Fire-and-forget — no bloqueamos la UI esperando la red
-        supabase.auth.signOut().catch(e => console.warn('[Logout] network:', e.message));
+        } catch { /* storage no disponible (modo privado) */ }
+    };
+
+    // Recuperación de contraseña: al abrir el enlace del email, Supabase emite PASSWORD_RECOVERY
+    // y mostramos la pantalla de nueva contraseña (antes el enlace no hacía nada).
+    const updatePassword = async (newPassword) => {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+        setRecoveryMode(false);
     };
 
     const value = {
@@ -150,6 +164,8 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         resetPassword,
+        updatePassword,
+        recoveryMode,
         loading,
         isAuthenticated: !!user
     };

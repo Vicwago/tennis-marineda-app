@@ -13,7 +13,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Marineda" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
 
     <!-- Favicon + Manifest -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -44,7 +45,7 @@
       }
       // 3. Auto-actualizar: comprobar si el HTML cargado es el más reciente
       (function() {
-        var BUILD_VERSION = 'v2026-03-26-6';
+        var BUILD_VERSION = 'v2026-09-17-1';
         var vKey = 'app_version';
         var stored = localStorage.getItem(vKey);
         if (stored && stored !== BUILD_VERSION) {

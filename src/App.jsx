@@ -10,6 +10,7 @@ import logoUrl from './assets/logo.png';
 // Rutas secundarias: se cargan solo cuando se visitan (reduce el bundle inicial)
 const Register = lazy(() => import('./components/Register'));
 const NewsFeed = lazy(() => import('./components/News/NewsFeed'));
+const ResetPassword = lazy(() => import('./components/ResetPassword'));
 
 // ─── Theme management ───────────────────────────────────────────
 const getInitialTheme = () => {
@@ -38,7 +39,7 @@ const SplashScreen = () => (
 );
 
 const AppContent = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, recoveryMode } = useAuth();
   const { setSport } = useGame();
   const [currentPath, setCurrentPath] = React.useState(window.location.pathname);
   const [theme, setTheme] = React.useState(getInitialTheme);
@@ -67,6 +68,15 @@ const AppContent = () => {
   // Splash screen while checking auth
   if (loading) {
     return <SplashScreen />;
+  }
+
+  // Route: llegada desde el enlace de recuperar contraseña
+  if (recoveryMode) {
+    return (
+      <Suspense fallback={<SplashScreen />}>
+        <ResetPassword onDone={() => navigate('/')} />
+      </Suspense>
+    );
   }
 
   // Route: News

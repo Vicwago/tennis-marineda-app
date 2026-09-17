@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useGame } from './GameContext';
 import { useAuth } from './AuthContext';
 import { supabase } from '../supabaseClient';
@@ -37,6 +37,28 @@ const generateSlots = (sport, category) => {
     return slots;
 };
 
+// ─── Fecha real del próximo <día> a las <hora> ─────────────────────────────
+// Convierte un slot ("lun_10:00") en la próxima fecha real. Se guarda en matches.date
+// para que los jugadores vean el día concreto (no solo "Lunes").
+const DAY_INDEX = { lun: 1, mar: 2, 'mié': 3, jue: 4, vie: 5, 'sáb': 6, dom: 0 };
+export const nextDateForSlot = (slotId, from = new Date()) => {
+    const [d, h] = (slotId || '').split('_');
+    if (!(d in DAY_INDEX) || !h) return null;
+    const [hh, mm] = h.split(':').map(Number);
+    const date = new Date(from);
+    const diff = (DAY_INDEX[d] - date.getDay() + 7) % 7;
+    date.setDate(date.getDate() + diff);
+    date.setHours(hh, mm || 0, 0, 0);
+    if (date <= from) date.setDate(date.getDate() + 7);
+    return date;
+};
+export const formatMatchDate = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d)) return null;
+    return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' });
+};
+
 // ─── Puntuación por deporte ────────────────────────────────────────────────
 // Todas las categorías: victoria=4 · derrota=1 (+1 extra si ganó algún set → 2 total) · WO ganado=4
 // Pádel extra: WO perdido con aviso >48h=0 · sin aviso=-1
@@ -60,6 +82,10 @@ export const DataProvider = ({ children }) => {
     const [teams, setTeams] = useState([]);
     const [matches, setMatches] = useState([]);
     const [courts, setCourts] = useState({});
+    // Referencia siempre actualizada a matches: evita closures obsoletos cuando el admin
+    // registra varios resultados seguidos (el segundo pisaba al primero hasta recargar).
+    const matchesRef = useRef([]);
+    useEffect(() => { matchesRef.current = matches; }, [matches]);
     const [appSettings, setAppSettings] = useState({ availability_locked: false, availability_deadline_label: '' });
 
     // ⚡ Declarado ANTES de los useCallback que lo usan como dependencia
@@ -225,7 +251,8 @@ export const DataProvider = ({ children }) => {
     };
 
     // loserWonSet: +1 pt al perdedor si ganó algún set (aplica a ambos deportes)
-    const saveMatchResult = async (matchId, score, winnerId, loserWonSet = false) => {
+    const saveMatchResult = async (matchId, score, winnerIdRaw, loserWonSet = false) => {
+        const winnerId = Number(winnerIdRaw); // el <select> devuelve texto: "12" !== 12 invertía ganador/perdedor
         try {
             const winnerPts = 4;
             const loserPts  = loserWonSet ? 2 : 1;
@@ -239,14 +266,14 @@ export const DataProvider = ({ children }) => {
 
             if (matchError) throw matchError;
 
-            const match = matches.find(m => m.id === matchId);
+            const match = matchesRef.current.find(m => m.id === matchId);
             if (!match) return;
 
             const winner = match.t1.id === winnerId ? match.t1 : match.t2;
             const loser  = match.t1.id === winnerId ? match.t2 : match.t1;
 
             // 2. Update Local State + recálculo de puntos desde la fuente de verdad
-            const updatedMatches = matches.map(m => m.id === matchId
+            const updatedMatches = matchesRef.current.map(m => m.id === matchId
                 ? { ...m, completed: true, score, winner_id: winnerId, loser_won_set: loserWonSet }
                 : m);
             setMatches(updatedMatches);
@@ -287,7 +314,8 @@ export const DataProvider = ({ children }) => {
     };
 
     // notified: el ausente avisó con >48h → pádel: 0 pts / sin aviso → pádel: -1 pt · tenis: siempre 0
-    const registerWalkover = async (matchId, winnerId, notified = false) => {
+    const registerWalkover = async (matchId, winnerIdRaw, notified = false) => {
+        const winnerId = Number(winnerIdRaw);
         try {
             const winnerPts = 4;
             const loserPts  = sport === 'padel' ? (notified ? 0 : -1) : 0;
@@ -301,14 +329,14 @@ export const DataProvider = ({ children }) => {
 
             if (matchError) throw matchError;
 
-            const match = matches.find(m => m.id === matchId);
+            const match = matchesRef.current.find(m => m.id === matchId);
             if (!match) return;
 
             const winner = match.t1.id === winnerId ? match.t1 : match.t2;
             const loser  = match.t1.id === winner.id ? match.t2 : match.t1;
 
             // 2. Update Local State + recálculo de puntos desde la fuente de verdad
-            const updatedMatches = matches.map(m => m.id === matchId
+            const updatedMatches = matchesRef.current.map(m => m.id === matchId
                 ? { ...m, completed: true, score: 'W.O.', winner_id: winnerId, played: true, wo_notified: notified }
                 : m);
             setMatches(updatedMatches);
@@ -392,7 +420,12 @@ export const DataProvider = ({ children }) => {
     const updateMatch = async (matchId, updates) => {
         try {
             const dbUpdates = {};
-            if (updates.slot_id !== undefined) dbUpdates.slot_id = updates.slot_id;
+            if (updates.slot_id !== undefined) {
+                dbUpdates.slot_id = updates.slot_id;
+                // Reprogramar: nueva fecha real y se quita el estado APLAZADO
+                dbUpdates.date = nextDateForSlot(updates.slot_id)?.toISOString() ?? null;
+                dbUpdates.postponed = false;
+            }
             if (updates.team1_id !== undefined) dbUpdates.team1_id = updates.team1_id;
             if (updates.team2_id !== undefined) dbUpdates.team2_id = updates.team2_id;
 
@@ -493,6 +526,8 @@ export const DataProvider = ({ children }) => {
                 sport,
                 category: sport === 'tennis' ? tennisCategory : null,
                 slot_id: m.slot,
+                court: m.court != null ? String(m.court) : null,          // nº de pista asignado por el generador
+                date: m.date ?? nextDateForSlot(m.slot)?.toISOString() ?? null, // fecha real del partido
                 played: false,
                 postponed: false
             }));
@@ -539,6 +574,7 @@ export const DataProvider = ({ children }) => {
 
         } catch (error) {
             console.error('Error creating schedule:', error);
+            throw error; // que la UI lo muestre en vez de decir "Jornada generada" con la BD vacía
         }
     };
 
@@ -736,44 +772,46 @@ export const DataProvider = ({ children }) => {
         }
     };
 
+    // Borra SOLO el ámbito actual (deporte + categoría). Antes borraba las dos categorías de tenis a la vez.
     const clearAllData = async () => {
         try {
             setLoading(true);
-            // Get all team IDs for this sport
-            const { data: sportTeams } = await supabase
-                .from('teams')
-                .select('id')
-                .eq('sport', sport);
-
-            if (sportTeams && sportTeams.length > 0) {
-                const ids = sportTeams.map(t => t.id);
-                // Delete availability, then matches, then teams
-                await supabase.from('availability').delete().in('team_id', ids);
+            const scoped = (q) => sport === 'tennis' ? q.eq('sport', sport).eq('category', tennisCategory) : q.eq('sport', sport);
+            const { data: sportTeams, error: selErr } = await scoped(supabase.from('teams').select('id'));
+            if (selErr) throw selErr;
+            const ids = (sportTeams || []).map(t => t.id);
+            if (ids.length > 0) {
+                const { error: e1 } = await supabase.from('availability').delete().in('team_id', ids);
+                if (e1) throw e1;
             }
-            await supabase.from('matches').delete().eq('sport', sport);
-            const { error } = await supabase.from('teams').delete().eq('sport', sport);
-            if (error) throw error;
-
+            const { error: e2 } = await scoped(supabase.from('matches').delete());
+            if (e2) throw e2;
+            const { error: e3 } = await scoped(supabase.from('teams').delete());
+            if (e3) throw e3;
             setTeams([]);
             setMatches([]);
         } catch (error) {
             console.error('Error clearing data:', error);
-            alert('Error al limpiar los datos: ' + error.message);
+            throw error;
         } finally {
             setLoading(false);
         }
     };
 
+    // Un jugador con partidos NO se puede borrar (se perdería el historial de sus rivales):
+    // se le da de baja (semana libre permanente) y se conserva el historial.
     const deleteTeam = async (teamId) => {
-        try {
-            await supabase.from('availability').delete().eq('team_id', teamId);
-            const { error } = await supabase.from('teams').delete().eq('id', teamId);
-            if (error) throw error;
-            setTeams(prev => prev.filter(t => t.id !== teamId));
-        } catch (error) {
-            console.error('Error deleting team:', error);
-            alert('Error al eliminar jugador: ' + error.message);
+        const played = matchesRef.current.filter(m => m.team1_id === teamId || m.team2_id === teamId).length;
+        if (played > 0) {
+            const err = new Error(`Este jugador tiene ${played} partido${played !== 1 ? 's' : ''} registrado${played !== 1 ? 's' : ''} y no se puede borrar sin perder el historial. Márcalo como "semana libre" para darlo de baja del generador.`);
+            err.code = 'HAS_MATCHES';
+            throw err;
         }
+        const { error: e1 } = await supabase.from('availability').delete().eq('team_id', teamId);
+        if (e1) throw e1;
+        const { error } = await supabase.from('teams').delete().eq('id', teamId);
+        if (error) throw error;
+        setTeams(prev => prev.filter(t => t.id !== teamId));
     };
 
     const importPlayers = async (playersData) => {

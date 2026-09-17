@@ -42,6 +42,8 @@ export default function NotificationsPanel({ onClose }) {
     // Close on outside click
     useEffect(() => {
         const handleClick = (e) => {
+            // La campana gestiona su propio toggle: si no la ignoramos, mousedown cierra y click reabre.
+            if (e.target.closest && e.target.closest('[data-notif-bell]')) return;
             if (panelRef.current && !panelRef.current.contains(e.target)) {
                 onClose();
             }

@@ -1,0 +1,22 @@
+name: Supabase keep-alive
+
+# El plan Free de Supabase pausa el proyecto tras ~7 días sin actividad y la app se queda muerta.
+# Este ping cada 3 días cuenta como actividad y evita la pausa. (Usa la clave anon, que es pública.)
+on:
+  schedule:
+    - cron: '0 6 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping REST de Supabase (tabla pública chronicles)
+        env:
+          SUPABASE_URL: https://tdmyduolpmxstaaowcpv.supabase.co
+          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkbXlkdW9scG14c3RhYW93Y3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MDEyMDUsImV4cCI6MjA4MDk3NzIwNX0.S3KwCeNlftQMCFb77vGiKC__AKsCf3pNN9xPyu6LctQ
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$SUPABASE_URL/rest/v1/chronicles?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "HTTP $code"
+          test "$code" = "200"
