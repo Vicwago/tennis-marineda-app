@@ -1051,7 +1051,75 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
 });
 
 // --- HistoryView ---
-const HistoryView = memo(({ matches, currentSlots, teams }) => {
+// --- UsersModal: gestión de usuarios y roles (admin) ---
+const UsersModal = ({ onClose, listUsers, setUserRole, currentUserId, showConfirm }) => {
+    const [users, setUsers] = useState(null);
+    const [busy, setBusy] = useState(null);
+    const [error, setError] = useState('');
+    const load = useCallback(() => {
+        setError('');
+        listUsers().then(setUsers).catch(e => setError(e.message || 'No se pudieron cargar los usuarios.'));
+    }, [listUsers]);
+    useEffect(() => { load(); }, [load]);
+
+    const toggle = async (u) => {
+        const target = u.role === 'admin' ? 'player' : 'admin';
+        const ok = await showConfirm({
+            title: target === 'admin' ? 'Hacer administrador' : 'Quitar administrador',
+            message: target === 'admin'
+                ? `${u.full_name || u.email} podrá gestionar jugadores, jornadas y resultados.`
+                : `${u.full_name || u.email} volverá a ser jugador normal.`,
+            confirmText: 'Confirmar', variant: target === 'admin' ? 'warning' : 'info'
+        });
+        if (!ok) return;
+        setBusy(u.id);
+        try { await setUserRole(u.id, target); load(); }
+        catch (e) { showConfirm({ title: 'No se pudo cambiar el rol', message: e.message, cancelText: null, variant: 'danger' }); }
+        finally { setBusy(null); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
+            <div className="rounded-2xl p-6 max-w-lg w-full shadow-2xl max-h-[85vh] overflow-y-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)' }} onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-lg font-bold text-white">Usuarios y roles</h3>
+                    <button onClick={onClose} aria-label="Cerrar" style={{ color: 'var(--text-3)' }}><X size={18} /></button>
+                </div>
+                <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>Los administradores gestionan jugadores, jornadas y resultados.</p>
+                {error && <div className="mb-3 px-3 py-2 rounded-lg text-sm" style={{ background: 'rgba(229,57,53,0.12)', border: '1px solid rgba(229,57,53,0.3)', color: '#ff8a80' }}>{error}</div>}
+                {users === null && !error && <p className="text-sm py-6 text-center" style={{ color: 'var(--text-3)' }}>Cargando...</p>}
+                <div className="space-y-2">
+                    {(users || []).map(u => (
+                        <div key={u.id} className="flex items-center justify-between gap-3 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                            <div className="min-w-0">
+                                <p className="font-bold text-white text-sm truncate">{u.full_name || u.email}</p>
+                                <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>{u.email}</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[10px] font-bold px-2 py-1 rounded-full" style={u.role === 'admin' ? { background: 'rgba(0,212,255,0.15)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.35)' } : { background: 'rgba(255,255,255,0.06)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
+                                    {u.role === 'admin' ? 'ADMIN' : 'Jugador'}
+                                </span>
+                                {u.id === currentUserId ? (
+                                    <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>(tú)</span>
+                                ) : (
+                                    <button onClick={() => toggle(u)} disabled={busy === u.id}
+                                        className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                                        style={u.role === 'admin'
+                                            ? { color: '#ff8a80', border: '1px solid rgba(229,57,53,0.3)', background: 'rgba(229,57,53,0.08)' }
+                                            : { color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.3)', background: 'rgba(0,212,255,0.08)' }}>
+                                        {busy === u.id ? '...' : (u.role === 'admin' ? 'Quitar admin' : 'Hacer admin')}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const HistoryView = memo(({ matches, currentSlots, teams, isAdmin, onCorrect }) => {
     const [historyGroup, setHistoryGroup] = React.useState('all');
 
     const completedMatches = useMemo(
@@ -1146,6 +1214,11 @@ const HistoryView = memo(({ matches, currentSlots, teams }) => {
                                     <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>—</span>
                                 </div>
                             </div>
+                            {isAdmin && (
+                                <button onClick={() => onCorrect(match)} className="mt-3 w-full text-xs font-medium py-1.5 rounded-lg transition-all" style={{ color: '#FFC107', border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.08)' }}>
+                                    Corregir resultado
+                                </button>
+                            )}
                         </Card>
                     );
                 })}
@@ -1457,7 +1530,8 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onToggleTheme }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, importPlayers, deleteTeam, clearAllData } = useData();
+    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
+    const [showUsersModal, setShowUsersModal] = useState(false);
     const { unreadCount } = useNotifications();
 
     // Navigation State
@@ -1876,7 +1950,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
                 {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onClearAll={clearAllData} showConfirm={showConfirm} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} showConfirm={showConfirm} />}
-                {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} />}
+                {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { showConfirm({ title: 'Error', message: e?.message || String(e), cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}
                 {activeTab === 'calendar' && <CalendarView matches={matches} currentSlots={currentSlots} />}
                 {activeTab === 'standings' && (() => {
@@ -1943,6 +2017,20 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     <Trophy style={{ color: color.accent }} size={20} />
                                     <h3 className="font-bold text-white">{curGroup}</h3>
                                     <span className="text-xs ml-auto" style={{ color: 'var(--text-3)' }}>{groupTeams.length} jugadores · Top 3 ascienden</span>
+                                    <button
+                                        onClick={() => {
+                                            const txt = `🏆 Clasificación ${isTennis ? 'Tenis' : 'Pádel'} — ${curGroup}\n(Escuela de Tenis Marineda)\n\n` +
+                                                groupTeams.map((t, i) => `${i + 1}. ${t.name} — ${t.points} pts (${t.matchesPlayed || 0} PJ)`).join('\n');
+                                            const done = () => showConfirm({ title: 'Copiado', message: 'Clasificación copiada. Ya puedes pegarla en WhatsApp.', cancelText: null, variant: 'info' });
+                                            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done).catch(() => showConfirm({ title: 'Clasificación', message: txt, cancelText: null, variant: 'info' }));
+                                            else showConfirm({ title: 'Clasificación', message: txt, cancelText: null, variant: 'info' });
+                                        }}
+                                        title="Copiar para WhatsApp"
+                                        className="text-xs font-medium px-2.5 py-1 rounded-lg transition-all"
+                                        style={{ color: color.accent, border: `1px solid ${color.border}`, background: color.bg }}
+                                    >
+                                        📋 Copiar
+                                    </button>
                                 </div>
                                 {/* Mobile */}
                                 <div className="block md:hidden">
@@ -2065,9 +2153,26 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>Adultos y Juveniles — disponibilidad y grupos</p>
                                 </div>
                             </button>
+                            <button
+                                onClick={() => { setShowProfilesModal(false); setShowUsersModal(true); }}
+                                className="w-full flex items-center gap-3 p-4 rounded-xl text-left transition-all"
+                                style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'white' }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,212,255,0.16)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,212,255,0.08)'}
+                            >
+                                <span className="text-2xl">🛡️</span>
+                                <div>
+                                    <p className="font-bold">Usuarios y roles</p>
+                                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>Hacer o quitar administradores (Mauri, Braulio...)</p>
+                                </div>
+                            </button>
                         </div>
                     </div>
                 </div>
+            )}
+
+            {showUsersModal && (
+                <UsersModal onClose={() => setShowUsersModal(false)} listUsers={listUsers} setUserRole={setUserRole} currentUserId={user?.id} showConfirm={showConfirm} />
             )}
 
             {/* Sidebar (Desktop) */}

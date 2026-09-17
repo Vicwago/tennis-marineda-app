@@ -773,6 +773,30 @@ export const DataProvider = ({ children }) => {
     };
 
     // Borra SOLO el ámbito actual (deporte + categoría). Antes borraba las dos categorías de tenis a la vez.
+    // Corregir un resultado ya registrado: reabre el partido para volver a introducirlo.
+    const reopenMatch = async (matchId) => {
+        const { error } = await supabase.from('matches')
+            .update({ completed: false, played: false, winner_id: null, score: null, loser_won_set: false, wo_notified: false })
+            .eq('id', matchId);
+        if (error) throw error;
+        const updated = matchesRef.current.map(m => m.id === matchId
+            ? { ...m, completed: false, played: false, winner_id: null, score: null, loser_won_set: false, wo_notified: false }
+            : m);
+        setMatches(updated);
+        recomputeTeamsFromMatches(updated);
+    };
+
+    // Gestión de usuarios y roles (admin) — vía RPC con salvaguardas en BD
+    const listUsers = async () => {
+        const { data, error } = await supabase.rpc('admin_list_users');
+        if (error) throw error;
+        return data || [];
+    };
+    const setUserRole = async (userId, role) => {
+        const { error } = await supabase.rpc('set_user_role', { p_user: userId, p_role: role });
+        if (error) throw error;
+    };
+
     const clearAllData = async () => {
         try {
             setLoading(true);
@@ -961,11 +985,14 @@ export const DataProvider = ({ children }) => {
         createMatch,
         updateMatch,
         deleteMatch,
+        reopenMatch,
         importPlayers,
         deleteTeam,
         clearAllData,
         createSchedule,
         generateDemoData,
+        listUsers,
+        setUserRole,
         loading,
         currentSlots
     }), [teams, matches, courts, appSettings, loading, currentSlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings]);
