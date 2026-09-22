@@ -334,7 +334,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                         <Button size="sm" onClick={submitAdd} disabled={addBusy || !addName.trim()}>{addBusy ? 'Añadiendo...' : 'Añadir'}</Button>
                         <Button size="sm" variant="secondary" onClick={() => { setAddOpen(false); setAddName(''); setAddGroup(''); }}>Cancelar</Button>
                     </div>
-                    <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>Sin cuenta: tú le gestionas la disponibilidad. Podrá vincularse luego si se registra con el mismo nombre.</p>
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>Sin cuenta: tú le gestionas la disponibilidad. Cuando esa persona se registre con este mismo nombre, su cuenta se vinculará sola a este jugador (conserva grupo, puntos e historial).</p>
                 </div>
             )}
 
@@ -940,6 +940,9 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                         <Edit3 size={14} /> Editar
                                     </button>
                                 )}
+                                {/* Solo los dos rivales (y el admin) pueden abrir el chat: la BD
+                                    rechaza los mensajes de terceros, así que mostrarlo confundía. */}
+                                {(mine || isAdmin) && (
                                 <button
                                     onClick={() => onChatClick && onChatClick(match)}
                                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
@@ -949,6 +952,7 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                 >
                                     <MessageSquare size={14} /> Chat del Partido
                                 </button>
+                                )}
                             </div>
                             </Card>
                         );
@@ -2472,7 +2476,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(229,57,53,0.3)' }}>
                                 <button onClick={() => { setSport('padel'); setActiveTab(isAdmin ? 'schedule' : 'availability'); setIsMobileMenuOpen(false); }} className="w-full p-3.5 text-left font-bold text-white text-sm" style={{ background: 'rgba(229,57,53,0.1)' }}>🏓 Pádel</button>
                                 <div className="grid grid-cols-3 gap-0" style={{ borderTop: '1px solid rgba(229,57,53,0.2)' }}>
-                                    {[{tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Disponib.'}, {tab: 'standings', label: 'Ranking'}, {tab: 'teams', label: 'Parejas'}, {tab: 'history', label: 'Historial'}, {tab: 'courts', label: 'Pistas'}].map(item => (
+                                    {[{tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Disponib.'}, {tab: 'standings', label: 'Ranking'}, {tab: 'teams', label: 'Parejas'}, {tab: 'history', label: 'Historial'}, ...(isAdmin ? [{tab: 'courts', label: 'Pistas'}] : [])].map(item => (
                                         <button key={item.tab} onClick={() => { setSport('padel'); setActiveTab(item.tab); setIsMobileMenuOpen(false); }}
                                             className="p-3 text-center text-xs font-medium"
                                             style={{ color: (sport === 'padel' && activeTab === item.tab) ? 'var(--cyan)' : 'var(--text-2)', borderRight: '1px solid rgba(229,57,53,0.15)' }}>
@@ -2495,7 +2499,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     ))}
                                 </div>
                                 <div className="grid grid-cols-3 gap-0" style={{ borderTop: '1px solid rgba(255,193,7,0.15)' }}>
-                                    {[{tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Disponib.'}, {tab: 'standings', label: 'Ranking'}, {tab: 'teams', label: 'Jugadores'}, {tab: 'history', label: 'Historial'}, {tab: 'courts', label: 'Pistas'}].map(item => (
+                                    {[{tab: isAdmin ? 'schedule' : 'availability', label: isAdmin ? 'Jornada' : 'Disponib.'}, {tab: 'standings', label: 'Ranking'}, {tab: 'teams', label: 'Jugadores'}, {tab: 'history', label: 'Historial'}, ...(isAdmin ? [{tab: 'courts', label: 'Pistas'}] : [])].map(item => (
                                         <button key={item.tab} onClick={() => { setSport('tennis'); setActiveTab(item.tab); setIsMobileMenuOpen(false); }}
                                             className="p-3 text-center text-xs font-medium"
                                             style={{ color: (sport === 'tennis' && activeTab === item.tab) ? '#FFC107' : 'var(--text-2)', borderRight: '1px solid rgba(255,193,7,0.15)' }}>

@@ -30,17 +30,16 @@ const NewsFeed = ({ onBack }) => {
 
             const { data, error } = await Promise.race([query, timeout]);
 
+            // Nunca mostrar noticias de ejemplo: es un club real y las confundían con reales.
             if (error) {
                 console.warn('Error fetching chronicles:', error);
-                setArticles(MOCK_ARTICLES);
-            } else if (data && data.length > 0) {
-                setArticles(data);
+                setArticles([]);
             } else {
-                setArticles(MOCK_ARTICLES);
+                setArticles(data || []);
             }
         } catch (err) {
-            console.warn('Chronicles fetch failed, using mock data:', err.message);
-            setArticles(MOCK_ARTICLES);
+            console.warn('Chronicles fetch failed:', err.message);
+            setArticles([]);
         } finally {
             setLoading(false);
         }
@@ -126,24 +125,5 @@ const NewsFeed = ({ onBack }) => {
         </div>
     );
 };
-
-const MOCK_ARTICLES = [
-    {
-        id: '1',
-        title: 'Resumen Jornada 5: Sorpresas en el Grupo 1',
-        content: 'Una semana llena de emociones donde los favoritos han sufrido para mantener sus posiciones. Destacamos el partido entre...',
-        image_url: 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?q=80&w=800&auto=format&fit=crop',
-        created_at: new Date().toISOString(),
-        author: 'Admin'
-    },
-    {
-        id: '2',
-        title: 'Torneo de Navidad: Inscripciones Abiertas',
-        content: 'Ya puedes apuntarte al tradicional torneo de Navidad. Plazas limitadas para todas las categorías. ¡No te quedes fuera!',
-        image_url: 'https://images.unsplash.com/photo-1622279457486-62dcc4a431d6?q=80&w=800&auto=format&fit=crop',
-        created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-        author: 'Dirección'
-    }
-];
 
 export default NewsFeed;

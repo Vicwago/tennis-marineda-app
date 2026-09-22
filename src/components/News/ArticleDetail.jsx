@@ -21,9 +21,7 @@ const ArticleDetail = ({ articleId, onBack }) => {
                 setArticle(data);
             } catch (err) {
                 console.error('Error fetching article:', err);
-                // Fallback for demo if ID matches mock data
-                const mock = MOCK_ARTICLES.find(a => a.id === articleId);
-                if (mock) setArticle(mock);
+                setArticle(null);
             } finally {
                 setLoading(false);
             }
@@ -88,25 +86,5 @@ const ArticleDetail = ({ articleId, onBack }) => {
         </div>
     );
 };
-
-// Duplicate mock data for fallback
-const MOCK_ARTICLES = [
-    {
-        id: '1',
-        title: 'Resumen Jornada 5: Sorpresas en el Grupo 1',
-        content: 'Una semana llena de emociones donde los favoritos han sufrido para mantener sus posiciones. Destacamos el partido entre...',
-        image_url: 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?q=80&w=800&auto=format&fit=crop',
-        created_at: new Date().toISOString(),
-        author: 'Admin'
-    },
-    {
-        id: '2',
-        title: 'Torneo de Navidad: Inscripciones Abiertas',
-        content: 'Ya puedes apuntarte al tradicional torneo de Navidad. Plazas limitadas para todas las categorías. ¡No te quedes fuera!',
-        image_url: 'https://images.unsplash.com/photo-1622279457486-62dcc4a431d6?q=80&w=800&auto=format&fit=crop',
-        created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-        author: 'Dirección'
-    }
-];
 
 export default ArticleDetail;
