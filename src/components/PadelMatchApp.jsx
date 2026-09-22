@@ -135,34 +135,22 @@ const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulk
 
 const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, fillDailyCourts, updateCourtCount, showConfirm }) => {
     const [expandedDay, setExpandedDay] = useState(DAYS[0]);
-    const [customSlots, setCustomSlots] = useState(() => {
-        try { return JSON.parse(localStorage.getItem(`custom_slots_${sport}_${tennisCategory}`) || '{}'); } catch { return {}; }
-    });
     const [addingSlotDay, setAddingSlotDay] = useState(null);
     const [newHour, setNewHour] = useState('');
 
-    const saveCustomSlots = (updated) => {
-        setCustomSlots(updated);
-        localStorage.setItem(`custom_slots_${sport}_${tennisCategory}`, JSON.stringify(updated));
-    };
-
+    // Los horarios especiales ya NO viven en el navegador del admin: se crean como pista en la
+    // BD (court_availability) y así los ven todos (jugadores y generador). Antes solo los veía
+    // el admin que los creó y no aparecían al marcar disponibilidad.
     const addCustomSlot = (day) => {
         if (!newHour.match(/^\d{2}:\d{2}$/)) { showConfirm({ title: 'Formato incorrecto', message: 'Usa HH:MM (ej: 15:30)', cancelText: null, variant: 'warning' }); return; }
-        const id = `custom_${day.substring(0,3).toLowerCase()}_${newHour}`;
-        const updated = { ...customSlots, [id]: { id, day, hour: newHour, custom: true } };
-        saveCustomSlots(updated);
+        const id = `${day.substring(0, 3).toLowerCase()}_${newHour}`;
+        if (currentSlots.some(s => s.id === id)) { showConfirm({ title: 'Ya existe', message: 'Ese horario ya está en la lista: ajusta sus pistas con + y −.', cancelText: null, variant: 'info' }); return; }
+        updateCourtCount(id, 1); // crea la fila con 1 pista → visible para todos
         setAddingSlotDay(null);
         setNewHour('');
     };
 
-    const removeCustomSlot = (id) => {
-        const updated = { ...customSlots };
-        delete updated[id];
-        saveCustomSlots(updated);
-    };
-
-    const getExtraSlots = (day) => Object.values(customSlots).filter(s => s.day === day);
-    const allSlotsForDay = (day) => [...currentSlots.filter(s => s.day === day), ...getExtraSlots(day)];
+    const allSlotsForDay = (day) => currentSlots.filter(s => s.day === day);
 
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
@@ -175,7 +163,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                     <p className="text-sm" style={{ color: 'var(--text-2)' }}>
                         Gestiona los cupos disponibles por hora.
                         {sport === 'tennis' ? (tennisCategory === 'adults' ? ' (Turnos de 2h)' : ' (Turnos de 1h)') : ' (Turnos de 90min)'}
-                        {isAdmin && <span style={{ color: 'var(--cyan)' }}> · Puedes añadir horarios especiales con el botón + de cada día.</span>}
+                        {isAdmin && <span style={{ color: 'var(--cyan)' }}> · Los jugadores solo pueden marcar disponibilidad en las horas con pista (&gt;0). Añade horas nuevas con "+ Horario especial".</span>}
                     </p>
                 </div>
             </div>
@@ -238,10 +226,10 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                         {allSlots.map(slot => (
                                             <div key={slot.id} className="flex justify-between items-center p-3 rounded-lg transition-colors"
-                                                style={{ background: slot.custom ? 'rgba(0,255,135,0.05)' : 'rgba(255,255,255,0.03)', border: slot.custom ? '1px solid rgba(0,255,135,0.25)' : '1px solid var(--border)' }}>
+                                                style={{ background: (courtAvailability[slot.id] || 0) > 0 ? 'rgba(0,212,255,0.04)' : 'rgba(255,255,255,0.03)', border: (courtAvailability[slot.id] || 0) > 0 ? '1px solid rgba(0,212,255,0.2)' : '1px solid var(--border)' }}>
                                                 <div className="flex flex-col">
                                                     <span className="text-sm font-mono font-bold text-white">{slot.hour}</span>
-                                                    {slot.custom && <span className="text-[10px]" style={{ color: '#00ff87' }}>especial</span>}
+                                                    {(courtAvailability[slot.id] || 0) === 0 && <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>sin pista</span>}
                                                 </div>
                                                 <div className="flex items-center gap-1">
                                                     {isAdmin && <button onClick={() => updateCourtCount(slot.id, -1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>-</button>}
@@ -249,11 +237,6 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                                                         {courtAvailability[slot.id] || 0}
                                                     </span>
                                                     {isAdmin && <button onClick={() => updateCourtCount(slot.id, 1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>+</button>}
-                                                    {isAdmin && slot.custom && (
-                                                        <button onClick={() => removeCustomSlot(slot.id)} className="w-7 h-7 flex items-center justify-center rounded-lg ml-1" style={{ background: 'rgba(229,57,53,0.08)', color: '#ff6b6b', border: '1px solid rgba(229,57,53,0.2)' }} title="Eliminar horario">
-                                                            <X size={12} />
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -268,7 +251,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, showConfirm }) => {
+const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, showConfirm }) => {
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     const [addOpen, setAddOpen] = useState(false);
     const [addName, setAddName] = useState('');
@@ -380,7 +363,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
 
                                 <div className="p-3 rounded-xl mb-4 min-h-[120px]" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                                     <div className="grid grid-cols-3 gap-2">
-                                        {currentSlots.filter(s => s.day === editingDay).map(slot => (
+                                        {(availabilitySlots || currentSlots).filter(s => s.day === editingDay).map(slot => (
                                             <button
                                                 key={slot.id}
                                                 onClick={() => toggleAvailability(slot.id)}
@@ -440,6 +423,8 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                         </div>
                                     </div>
 
+                                    {/* La disponibilidad de los demás solo la ve el admin (privacidad entre jugadores) */}
+                                    {isAdmin && (
                                     <div className="space-y-1">
                                         <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Disponibilidad:</span>
                                         <div className="flex flex-wrap gap-1.5 max-h-20 overflow-hidden">
@@ -457,6 +442,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                             {team.availability.length > 8 && <span className="text-[10px] self-center" style={{ color: 'var(--text-3)' }}>+{team.availability.length - 8} más</span>}
                                         </div>
                                     </div>
+                                    )}
                                 </div>
                                 {isAdmin && (
                                     <div className="absolute top-4 right-4 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-all">
@@ -499,7 +485,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
     );
 });
 
-const MyAvailabilityView = memo(({ teams, currentSlots, sport, showConfirm }) => {
+const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport, showConfirm }) => {
     const { updateTeamAvailability, updateWeekOff, appSettings } = useData();
     const { user } = useAuth();
     const [myTeamId, setMyTeamId] = useState('');
@@ -653,7 +639,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, sport, showConfirm }) =>
                                     {day}
                                 </div>
                                 <div className="p-2 grid grid-cols-2 gap-1.5">
-                                    {currentSlots.filter(s => s.day === day).map(slot => (
+                                    {(availabilitySlots || currentSlots).filter(s => s.day === day).map(slot => (
                                         <button
                                             key={slot.id}
                                             onClick={() => toggleSlot(slot.id)}
@@ -1564,7 +1550,7 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onToggleTheme }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, appSettings, currentSlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
+    const { data, appSettings, currentSlots, availabilitySlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
     const [showUsersModal, setShowUsersModal] = useState(false);
     const { unreadCount } = useNotifications();
 
@@ -1980,9 +1966,9 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         // Sport Selected View
         return (
             <div className="w-full max-w-6xl mx-auto">
-                {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} sport={sport} showConfirm={showConfirm} />}
+                {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} availabilitySlots={availabilitySlots} sport={sport} showConfirm={showConfirm} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} showConfirm={showConfirm} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} showConfirm={showConfirm} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { showConfirm({ title: 'Error', message: e?.message || String(e), cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}

@@ -37,6 +37,21 @@ const generateSlots = (sport, category) => {
     return slots;
 };
 
+// ─── Parseo de slot_id ("sáb_09:00") → {id, day, hour} ──────────────────────
+// Permite que los horarios que el admin crea como pista en la BD (cualquier día/hora)
+// aparezcan en todas las rejillas, no solo las horas base hardcodeadas.
+const ABBR_TO_DAY = { lun: 'Lunes', mar: 'Martes', 'mié': 'Miércoles', jue: 'Jueves', vie: 'Viernes', 'sáb': 'Sábado', dom: 'Domingo' };
+const DAY_ORDER = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+export const parseSlotId = (id) => {
+    if (!id || typeof id !== 'string') return null;
+    const idx = id.indexOf('_');
+    if (idx < 0) return null;
+    const day = ABBR_TO_DAY[id.slice(0, idx)];
+    const hour = id.slice(idx + 1);
+    if (!day || !/^\d{2}:\d{2}$/.test(hour)) return null;
+    return { id, day, hour, label: `${day} ${hour}` };
+};
+
 // ─── Fecha real del próximo <día> a las <hora> ─────────────────────────────
 // Convierte un slot ("lun_10:00") en la próxima fecha real. Se guarda en matches.date
 // para que los jugadores vean el día concreto (no solo "Lunes").
@@ -89,7 +104,24 @@ export const DataProvider = ({ children }) => {
     const [appSettings, setAppSettings] = useState({ availability_locked: false, availability_deadline_label: '' });
 
     // ⚡ Declarado ANTES de los useCallback que lo usan como dependencia
-    const currentSlots = useMemo(() => generateSlots(sport, tennisCategory), [sport, tennisCategory]);
+    // Universo de horarios = horas base del deporte ∪ cualquier horario que el admin haya
+    // creado como pista en la BD (antes los "horarios especiales" vivían solo en el
+    // localStorage de un admin y ni jugadores ni generador los veían).
+    const currentSlots = useMemo(() => {
+        const base = generateSlots(sport, tennisCategory);
+        const seen = new Set(base.map(s => s.id));
+        const extra = Object.keys(courts).map(parseSlotId).filter(Boolean).filter(s => !seen.has(s.id));
+        return [...base, ...extra].sort((a, b) =>
+            (DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day)) || a.hour.localeCompare(b.hour)
+        );
+    }, [sport, tennisCategory, courts]);
+
+    // Horarios que un jugador puede MARCAR como disponible = solo donde hay pista (>0).
+    // Si el admin aún no ha configurado ninguna pista, se ofrecen todos (para poder empezar).
+    const availabilitySlots = useMemo(() => {
+        const withCourts = currentSlots.filter(s => (courts[s.id] || 0) > 0);
+        return withCourts.length > 0 ? withCourts : currentSlots;
+    }, [currentSlots, courts]);
 
     // El bloqueo y el plazo de disponibilidad son POR deporte/categoría, no globales.
     // Traducimos la clave lógica a una clave física con sufijo de ámbito.
@@ -1014,8 +1046,9 @@ export const DataProvider = ({ children }) => {
         listUsers,
         setUserRole,
         loading,
-        currentSlots
-    }), [teams, matches, courts, appSettings, loading, currentSlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings]);
+        currentSlots,
+        availabilitySlots
+    }), [teams, matches, courts, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings]);
 
     return (
         <DataContext.Provider value={value}>
