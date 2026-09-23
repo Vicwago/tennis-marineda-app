@@ -180,6 +180,16 @@ export const AuthProvider = ({ children }) => {
         setRecoveryMode(false);
     };
 
+    // Recuperación por CÓDIGO de 6 dígitos (el mismo correo lo trae). Es la vía robusta: no
+    // depende de que el enlace se abra en el mismo navegador ni de que el gestor de correo
+    // (Outlook/Hotmail "Safe Links") lo haya abierto antes y lo haya gastado.
+    // Al verificar el código se crea la sesión y la app muestra la pantalla de nueva contraseña.
+    const verifyRecoveryCode = async (email, code) => {
+        setRecoveryMode(true);
+        const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
+        if (error) { setRecoveryMode(false); throw error; }
+    };
+
     const value = {
         user,
         login,
@@ -187,6 +197,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         resetPassword,
         updatePassword,
+        verifyRecoveryCode,
         recoveryMode,
         loading,
         isAuthenticated: !!user

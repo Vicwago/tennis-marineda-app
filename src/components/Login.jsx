@@ -5,7 +5,7 @@ import logoUrl from '../assets/logo.png';
 import CreditFooter from './CreditFooter';
 
 export default function Login({ onNavigateToRegister }) {
-    const { login, resetPassword } = useAuth();
+    const { login, resetPassword, verifyRecoveryCode } = useAuth();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -17,6 +17,42 @@ export default function Login({ onNavigateToRegister }) {
     const [resetEmail, setResetEmail] = useState('');
     const [resetLoading, setResetLoading] = useState(false);
     const [resetSent, setResetSent] = useState(false);
+    const [recoveryCode, setRecoveryCode] = useState('');
+    const [codeLoading, setCodeLoading] = useState(false);
+
+    // Si el enlace del correo llega caducado o ya usado, Supabase vuelve aquí con el error en el
+    // #hash de la URL. Antes se ignoraba y el jugador veía el login sin explicación.
+    useEffect(() => {
+        const h = window.location.hash || '';
+        if (!h.includes('error')) return;
+        const p = new URLSearchParams(h.replace(/^#/, ''));
+        const code = p.get('error_code') || '';
+        const desc = p.get('error_description') || p.get('error') || '';
+        const msg = /otp_expired|expired|invalid/i.test(code + ' ' + desc)
+            ? 'El enlace del correo ha caducado o ya se ha usado (algunos correos, como Hotmail, lo abren solos). Pulsa "¿Olvidaste tu contraseña?" y usa el código de 6 dígitos que viene en el correo.'
+            : 'No se pudo abrir el enlace: ' + desc.replace(/\+/g, ' ');
+        setError(msg);
+        try { window.history.replaceState({}, '', window.location.pathname); } catch { /* sin history */ }
+    }, []);
+
+    const handleVerifyCode = async (e) => {
+        e.preventDefault();
+        const code = recoveryCode.replace(/\D/g, '');
+        if (code.length < 6) { setError('Escribe los 6 dígitos del código que viene en el correo.'); return; }
+        setError('');
+        setCodeLoading(true);
+        try {
+            await verifyRecoveryCode(resetEmail, code);
+            // La sesión queda creada: la app pasa sola a la pantalla "Crea tu nueva contraseña"
+        } catch (err) {
+            const m = (err.message || '').toLowerCase();
+            setError(m.includes('expired') || m.includes('invalid') || m.includes('token')
+                ? 'Código incorrecto o caducado. Comprueba los 6 dígitos o pide un correo nuevo.'
+                : (err.message || 'No se pudo comprobar el código.'));
+        } finally {
+            setCodeLoading(false);
+        }
+    };
 
     // Muestra hint de "servidor arrancando" si tarda más de 8s
     useEffect(() => {
@@ -89,12 +125,30 @@ export default function Login({ onNavigateToRegister }) {
                     </div>
                     <h2 className="text-xl font-bold text-white mb-2">Email enviado</h2>
                     <p className="text-sm mb-1" style={{ color: 'var(--text-2)' }}>
-                        Si hay una cuenta con <span className="font-bold text-white">{resetEmail}</span>, recibirás un enlace para restablecer tu contraseña.
+                        Si hay una cuenta con <span className="font-bold text-white">{resetEmail}</span>, recibirás un correo con un <b className="text-white">código de 6 dígitos</b>.
                     </p>
-                    <p className="text-xs mb-6" style={{ color: 'var(--text-3)' }}>Revisa también la carpeta de spam.</p>
+                    <p className="text-xs mb-5" style={{ color: 'var(--text-3)' }}>Revisa también la carpeta de spam. Puede tardar un minuto.</p>
+
+                    <form onSubmit={handleVerifyCode} className="text-left space-y-3 mb-5">
+                        <label className="block text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Código del correo</label>
+                        <input
+                            type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={8}
+                            value={recoveryCode} onChange={e => setRecoveryCode(e.target.value)}
+                            placeholder="123456" autoFocus
+                            className="cyber-input w-full px-4 py-3 rounded-xl text-center text-2xl font-mono tracking-[0.4em]"
+                        />
+                        {error && (
+                            <div className="px-3 py-2 rounded-lg text-sm text-center" style={{ background: 'rgba(229,57,53,0.12)', border: '1px solid rgba(229,57,53,0.35)', color: '#ff6b6b' }}>{error}</div>
+                        )}
+                        <button type="submit" disabled={codeLoading} className="btn-cyber w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-60">
+                            {codeLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <>Continuar <ArrowRight className="w-5 h-5" /></>}
+                        </button>
+                    </form>
+                    <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>El correo también trae un enlace; si te funciona, vale igual. Si el enlace te devuelve al login, usa el código.</p>
                     <button
-                        onClick={() => { setForgotMode(false); setResetSent(false); setResetEmail(''); setError(''); }}
-                        className="btn-cyber w-full flex items-center justify-center gap-2"
+                        onClick={() => { setForgotMode(false); setResetSent(false); setResetEmail(''); setRecoveryCode(''); setError(''); }}
+                        className="w-full flex items-center justify-center gap-2 text-sm py-2"
+                        style={{ color: 'var(--text-2)' }}
                     >
                         <ArrowLeft size={16} /> Volver al login
                     </button>
