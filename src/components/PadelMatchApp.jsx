@@ -136,7 +136,7 @@ const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulk
     );
 };
 
-const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, courtsMeta = {}, fixedHours = [], preferredSlots = [], fillDailyCourts, updateCourtCount, onAddFixedHour, onRemoveFixedHour, onAddSpecialSlot, onRemoveSlot, onTogglePreferred, showConfirm }) => {
+const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, courtsMeta = {}, fixedHours = [], preferredSlots = [], fillDailyCourts, updateCourtCount, onAddFixedHour, onRemoveFixedHour, onAddSpecialSlot, onRemoveSlot, onClearExtra, onTogglePreferred, showConfirm }) => {
     const [expandedDay, setExpandedDay] = useState(DAYS[0]);
     const [addingSlotDay, setAddingSlotDay] = useState(null);
     const [newHour, setNewHour] = useState('');
@@ -166,15 +166,22 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
         catch (e) { fail('No se pudo quitar', e?.message || String(e)); }
     };
 
-    // ── Horario especial: un día concreto, SOLO esta semana (caduca el lunes siguiente) ──
+    // ── Horario especial: pistas EXTRA de una sola vez en un día concreto. Vale para una hora
+    //    nueva (p. ej. 11:00) o para una que ya existe (una pista más este sábado a las 16:00). ──
     const addSpecial = async (day) => {
         if (!HH.test(newHour)) return fail('Formato incorrecto', 'Usa HH:MM (ej: 15:30)');
         const id = `${day.substring(0, 3).toLowerCase()}_${newHour}`;
-        if (currentSlots.some(s => s.id === id)) return fail('Ya existe', 'Ese horario ya está en la lista: ajusta sus pistas con + y −.');
+        if (courtsMeta[id]?.extra_once > 0) return fail('Ya tiene pistas extra', 'Esa hora ya tiene pistas extra de una sola vez. Quítalas con la papelera si quieres cambiarlas.');
         setBusy(true);
         try { await onAddSpecialSlot(id, Math.max(1, Math.min(maxCourts, Number(newCount) || 1))); setAddingSlotDay(null); setNewHour(''); setNewCount(1); }
         catch (e) { fail('No se pudo añadir', e?.message || String(e)); }
         finally { setBusy(false); }
+    };
+    const clearExtra = async (slot) => {
+        const ok = await showConfirm({ title: 'Quitar pistas extra', message: `¿Quitar las pistas extra de una sola vez de ${slot.day} ${slot.hour}? Las pistas fijas de esa hora se quedan como están.`, confirmText: 'Quitar', variant: 'warning' });
+        if (!ok) return;
+        try { await onClearExtra(slot.id); }
+        catch (e) { fail('No se pudo quitar', e?.message || String(e)); }
     };
     const removeOne = async (slot) => {
         const ok = await showConfirm({ title: 'Quitar horario', message: `¿Quitar ${slot.day} ${slot.hour}? Desaparecerá para los jugadores.`, confirmText: 'Quitar', variant: 'danger' });
@@ -272,18 +279,20 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                                             <span className="text-sm text-white">{day}, hora:</span>
                                             <input className="cyber-input px-2 py-1 rounded text-sm font-mono w-24" placeholder="HH:MM" value={newHour}
                                                 onChange={e => setNewHour(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSpecial(day)} autoFocus />
-                                            <span className="text-sm text-white">pistas:</span>
+                                            <span className="text-sm text-white">pistas extra:</span>
                                             <input type="number" min={1} max={maxCourts} className="cyber-input px-2 py-1 rounded text-sm w-16" value={newCount} onChange={e => setNewCount(e.target.value)} />
                                             <button onClick={() => addSpecial(day)} disabled={busy} className="text-xs px-3 py-1.5 rounded-md font-bold" style={{ background: 'rgba(171,71,188,0.2)', color: '#CE93D8', border: '1px solid rgba(171,71,188,0.4)' }}>Añadir</button>
                                             <button onClick={() => setAddingSlotDay(null)} className="text-xs px-2 py-1.5 rounded-md" style={{ color: 'var(--text-3)' }}>Cancelar</button>
-                                            <span className="text-[11px] w-full" style={{ color: 'var(--text-3)' }}>Vale para la próxima vez que caiga ese día y se borra sola al día siguiente. Para una hora permanente usa "+ Hora fija" arriba.</span>
+                                            <span className="text-[11px] w-full" style={{ color: 'var(--text-3)' }}>Se suman a las pistas fijas de esa hora solo la próxima vez que caiga ese día, y se quitan solas al día siguiente. Vale para una hora nueva (11:00) o para una que ya existe (una pista más el sábado a las 16:00). Para algo permanente usa "+ Hora fija" o los botones + y −.</span>
                                         </div>
                                     )}
 
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                         {allSlots.map(slot => {
                                             const count = courtAvailability[slot.id] || 0;
-                                            const isSpecial = !!courtsMeta[slot.id]?.expires_at;
+                                            const meta = courtsMeta[slot.id] || {};
+                                            const hasExtra = (meta.extra_once || 0) > 0;          // pistas extra de una sola vez
+                                            const isSpecial = !!meta.expires_at;                    // hora que caduca entera
                                             const isFixed = !baseIds.has(slot.id) && fixedHours.includes(slot.hour);
                                             const isExtra = !baseIds.has(slot.id) && !isFixed && !isSpecial;   // creado como pista suelta
                                             const isPref = preferredSlots.includes(slot.id);
@@ -300,14 +309,18 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                                                         {slot.hour}
                                                     </span>
                                                     {count === 0 && <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>sin pista</span>}
-                                                    {isSpecial && <span className="text-[10px]" style={{ color: '#CE93D8' }}>una sola vez · {expiryLabel(courtsMeta[slot.id].expires_at)}</span>}
+                                                    {hasExtra && <span className="text-[10px]" style={{ color: '#CE93D8' }}>+{meta.extra_once} una sola vez · {expiryLabel(meta.extra_expires_at)}</span>}
+                                                    {isSpecial && !hasExtra && <span className="text-[10px]" style={{ color: '#CE93D8' }}>una sola vez · {expiryLabel(meta.expires_at)}</span>}
                                                     {isFixed && <span className="text-[10px]" style={{ color: '#00ff87' }}>hora fija</span>}
                                                 </div>
                                                 <div className="flex items-center gap-1">
                                                     {isAdmin && <button onClick={() => updateCourtCount(slot.id, -1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>-</button>}
                                                     <span className="w-7 text-center font-bold" style={{ color: count === 0 ? '#ff6b6b' : 'var(--cyan)' }}>{count}</span>
                                                     {isAdmin && <button onClick={() => updateCourtCount(slot.id, 1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>+</button>}
-                                                    {isAdmin && (isSpecial || isExtra) && (
+                                                    {isAdmin && (hasExtra && (baseIds.has(slot.id) || isFixed)) && (
+                                                        <button onClick={() => clearExtra(slot)} title="Quitar las pistas extra de una sola vez" className="w-7 h-7 flex items-center justify-center rounded-lg" style={{ color: '#CE93D8', border: '1px solid rgba(171,71,188,0.35)' }}><Trash2 size={13} /></button>
+                                                    )}
+                                                    {isAdmin && !(hasExtra && (baseIds.has(slot.id) || isFixed)) && (isSpecial || isExtra) && (
                                                         <button onClick={() => removeOne(slot)} title="Quitar este horario" className="w-7 h-7 flex items-center justify-center rounded-lg" style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}><Trash2 size={13} /></button>
                                                     )}
                                                 </div>
@@ -325,7 +338,41 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
-const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, showConfirm }) => {
+const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
+    // ── Vincular cuenta ↔ ficha (admin) ──
+    const [linkingTeamId, setLinkingTeamId] = useState(null);
+    const [accounts, setAccounts] = useState([]);
+    const [linkUserId, setLinkUserId] = useState('');
+    const openLink = async (team) => {
+        setLinkingTeamId(team.id); setLinkUserId('');
+        try { const list = await listUsers(); setAccounts(list || []); }
+        catch (e) { showConfirm({ title: 'No se pudo cargar la lista de cuentas', message: e?.message || String(e), cancelText: null, variant: 'danger' }); setLinkingTeamId(null); }
+    };
+    const confirmLink = async (team) => {
+        if (!linkUserId) return;
+        const acc = accounts.find(a => a.id === linkUserId);
+        const ok = await showConfirm({ title: 'Vincular cuenta', message: `La cuenta ${acc?.email || ''} pasará a ser "${team.name}": verá sus partidos, su disponibilidad y recibirá sus avisos.`, confirmText: 'Vincular', variant: 'info' });
+        if (!ok) return;
+        try { await onLinkAccount(team.id, linkUserId); setLinkingTeamId(null); }
+        catch (e) { showConfirm({ title: 'No se pudo vincular', message: e?.message || String(e), cancelText: null, variant: 'warning' }); }
+    };
+    const doUnlink = async (team) => {
+        const ok = await showConfirm({ title: 'Desvincular cuenta', message: `"${team.name}" dejará de estar unido a su cuenta. La ficha (puntos, partidos) se conserva; la persona verá "Cuenta no vinculada" hasta que la vuelvas a vincular.`, confirmText: 'Desvincular', variant: 'warning' });
+        if (!ok) return;
+        try { await onUnlinkAccount(team.id); }
+        catch (e) { showConfirm({ title: 'No se pudo desvincular', message: e?.message || String(e), cancelText: null, variant: 'danger' }); }
+    };
+    const toggleBaja = async (team) => {
+        const next = !team.week_off;
+        const ok = await showConfirm({
+            title: next ? 'Dar de baja del generador' : 'Volver a incluir en el generador',
+            message: next ? `"${team.name}" no entrará en las jornadas hasta que lo vuelvas a activar. Su ficha y su historial se conservan.` : `"${team.name}" volverá a entrar en las jornadas según su disponibilidad.`,
+            confirmText: next ? 'No juega' : 'Vuelve a jugar', variant: next ? 'warning' : 'info'
+        });
+        if (!ok) return;
+        try { await onToggleWeekOff(team.id, next); }
+        catch (e) { showConfirm({ title: 'No se pudo cambiar', message: e?.message || String(e), cancelText: null, variant: 'danger' }); }
+    };
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     const [addOpen, setAddOpen] = useState(false);
     const [addName, setAddName] = useState('');
@@ -517,6 +564,37 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                         </div>
                                     </div>
                                     )}
+
+                                    {/* Cuenta vinculada + baja del generador (solo admin) */}
+                                    {isAdmin && (
+                                    <div className="flex flex-wrap items-center gap-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                                        {team.user_id
+                                            ? <>
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: 'rgba(0,255,135,0.10)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.25)' }}>✓ Con cuenta</span>
+                                                <button onClick={() => doUnlink(team)} className="text-[10px] underline" style={{ color: 'var(--text-3)' }}>desvincular</button>
+                                              </>
+                                            : linkingTeamId === team.id
+                                                ? <>
+                                                    <select value={linkUserId} onChange={e => setLinkUserId(e.target.value)} className="cyber-input text-xs px-2 py-1 rounded-lg" style={{ maxWidth: 220 }}>
+                                                        <option value="">— Elige la cuenta —</option>
+                                                        {accounts.filter(a => !teams.some(t => t.user_id === a.id)).map(a => <option key={a.id} value={a.id}>{a.full_name || a.email} · {a.email}</option>)}
+                                                    </select>
+                                                    <Button size="sm" variant="success" onClick={() => confirmLink(team)} disabled={!linkUserId}>Vincular</Button>
+                                                    <button onClick={() => setLinkingTeamId(null)} className="text-[10px]" style={{ color: 'var(--text-3)' }}>Cancelar</button>
+                                                  </>
+                                                : <>
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>Sin cuenta</span>
+                                                    <button onClick={() => openLink(team)} className="text-[10px] underline" style={{ color: 'var(--cyan)' }} title="Unir esta ficha a la cuenta de la persona (si se registró con otro nombre, o tras un Borrar todo)">Vincular cuenta</button>
+                                                  </>
+                                        }
+                                        <span className="flex-1"></span>
+                                        <button onClick={() => toggleBaja(team)} className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                                            title={team.week_off ? 'No entra en las jornadas. Pulsa para volver a incluirlo.' : 'Darlo de baja del generador (no entrará en las jornadas)'}
+                                            style={team.week_off ? { background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.35)' } : { background: 'rgba(255,255,255,0.04)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+                                            {team.week_off ? '⏸ No juega' : 'No juega'}
+                                        </button>
+                                    </div>
+                                    )}
                                 </div>
                                 {isAdmin && (
                                     <div className="absolute top-4 right-4 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-all">
@@ -603,11 +681,18 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
         setSelectedAvailability(prev => prev.includes(slotId) ? prev.filter(id => id !== slotId) : [...prev, slotId]);
     };
 
-    const save = () => {
-        if (!myTeamId || isLocked) return;
-        updateTeamAvailability(parseInt(myTeamId), selectedAvailability);
-        setHasUnsavedChanges(false);
-        showConfirm({ title: 'Guardado', message: '¡Disponibilidad guardada correctamente!', cancelText: null, variant: 'info' });
+    const [saving, setSaving] = useState(false);
+    const save = async () => {
+        if (!myTeamId || isLocked || saving) return;
+        setSaving(true);
+        try {
+            await updateTeamAvailability(parseInt(myTeamId), selectedAvailability);
+            setHasUnsavedChanges(false);
+            showConfirm({ title: 'Guardado', message: '¡Disponibilidad guardada correctamente!', cancelText: null, variant: 'info' });
+        } catch (e) {
+            // El servidor manda (candado cerrado tras abrir la app, red caída…): se muestra el motivo real
+            showConfirm({ title: 'No se pudo guardar', message: e?.message || String(e), cancelText: null, variant: 'danger' });
+        } finally { setSaving(false); }
     };
 
     const handleWeekOff = (val) => {
@@ -627,7 +712,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                     Tu cuenta aún no está vinculada a ningún jugador en esta categoría.
                 </p>
                 <p className="text-xs px-3 py-2 rounded-lg" style={{ color: 'var(--cyan)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
-                    Contacta al administrador para que vincule tu cuenta con tu perfil de jugador.
+                    Si esta es tu categoría, dile a los monitores que vinculen tu cuenta desde tu ficha en "Jugadores" (botón "Vincular cuenta"). Si no, cambia arriba al deporte o categoría con el que te registraste.
                 </p>
             </div>
         );
@@ -844,23 +929,34 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
             showConfirm({ title: 'Equipos iguales', message: 'No puedes enfrentar un equipo consigo mismo.', cancelText: null, variant: 'warning' });
             return;
         }
+        // Esa pareja ya tiene un partido pendiente: mejor avisar con claridad que dejar que la BD
+        // responda con "duplicate key value violates unique constraint"
+        const a = Number(editTeam1), b = Number(editTeam2);
+        const dup = (matches || []).find(m => !m.completed && m.id !== editorMatch?.id &&
+            ((m.t1?.id === a && m.t2?.id === b) || (m.t1?.id === b && m.t2?.id === a)));
+        if (dup) {
+            const s = currentSlots.find(x => x.id === dup.slot) || parseSlotId(dup.slot);
+            showConfirm({ title: 'Ya tienen partido pendiente', message: `${dup.t1?.name} y ${dup.t2?.name} ya tienen un partido pendiente (${s ? s.day + ' ' + s.hour : 'sin hora'}${dup.postponed ? ' · APLAZADO' : ''}). Edítalo en vez de crear otro.`, cancelText: null, variant: 'warning' });
+            return;
+        }
         setSavingEdit(true);
         try {
             if (editorMode === 'create') {
-                await createMatch({ team1_id: Number(editTeam1), team2_id: Number(editTeam2), slot_id: editSlot });
+                await createMatch({ team1_id: a, team2_id: b, slot_id: editSlot });
             } else if (editorMode === 'edit' && editorMatch) {
                 await updateMatch(editorMatch.id, {
-                    team1_id: Number(editTeam1),
-                    team2_id: Number(editTeam2),
+                    team1_id: a,
+                    team2_id: b,
                     slot_id: editSlot
                 });
             }
             closeEditor();
         } catch (e) {
-            showConfirm({ title: 'Error', message: 'No se pudo guardar: ' + (e.message || e), cancelText: null, variant: 'danger' });
+            const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esa pareja ya tiene un partido pendiente. Edítalo en vez de crear otro.' : (e.message || e);
+            showConfirm({ title: 'Error', message: 'No se pudo guardar: ' + msg, cancelText: null, variant: 'danger' });
             setSavingEdit(false);
         }
-    }, [editorMode, editorMatch, editTeam1, editTeam2, editSlot, createMatch, updateMatch, closeEditor, showConfirm]);
+    }, [editorMode, editorMatch, editTeam1, editTeam2, editSlot, matches, currentSlots, createMatch, updateMatch, closeEditor, showConfirm]);
 
     const handleDeleteMatch = useCallback(async () => {
         if (!editorMatch) return;
@@ -899,14 +995,14 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                 type="text"
                                 value={deadlineInput}
                                 onChange={e => setDeadlineInput(e.target.value)}
-                                onBlur={() => updateAppSettings('availability_deadline_label', deadlineInput)}
+                                onBlur={() => Promise.resolve(updateAppSettings('availability_deadline_label', deadlineInput)).catch(e => showConfirm({ title: 'No se pudo guardar el plazo', message: e?.message || String(e), cancelText: null, variant: 'danger' }))}
                                 placeholder="Miércoles 20:00"
                                 className="cyber-input w-full px-3 py-2 rounded-lg text-sm"
                             />
                         </div>
                         <div className="flex items-end">
                             <button
-                                onClick={() => updateAppSettings('availability_locked', !isLocked)}
+                                onClick={() => Promise.resolve(updateAppSettings('availability_locked', !isLocked)).catch(e => showConfirm({ title: 'No se pudo cambiar el bloqueo', message: (e?.message || String(e)) + '\n\nEl candado NO ha cambiado: los jugadores siguen pudiendo editar su disponibilidad.', cancelText: null, variant: 'danger' }))}
                                 className="px-4 py-2 rounded-lg text-sm font-bold transition-all w-full sm:w-auto"
                                 style={isLocked
                                     ? { background: 'rgba(229,57,53,0.2)', border: '1px solid rgba(229,57,53,0.5)', color: '#ff6b6b' }
@@ -1707,7 +1803,7 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onToggleTheme }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, appSettings, currentSlots, availabilitySlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, publishSchedule, discardDrafts, addFixedHour, removeFixedHour, addSpecialSlot, removeSlot, togglePreferredSlot, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
+    const { data, appSettings, currentSlots, availabilitySlots, loading, updateTeamAvailability, updateCourtCount, adjustCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, publishSchedule, discardDrafts, addFixedHour, removeFixedHour, addSpecialSlot, clearExtraCourts, removeSlot, togglePreferredSlot, linkTeamAccount, unlinkTeamAccount, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
     const [showUsersModal, setShowUsersModal] = useState(false);
     const { unreadCount } = useNotifications();
 
@@ -1838,15 +1934,14 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     const updateCourtCountHandler = useCallback((slotId, delta) => {
         if (!isAdmin) return;
         const maxCourts = sport === 'padel' ? 3 : 7;
-        const currentCount = courtAvailability[slotId] || 0;
-        const newCount = Math.max(0, Math.min(maxCourts, currentCount + delta));
-        updateCourtCount(slotId, newCount);
-    }, [isAdmin, sport, courtAvailability, updateCourtCount]);
+        // +1/−1 sobre el valor real (ref), no sobre el closure: dos clics seguidos ya no se pisan
+        adjustCourtCount(slotId, delta, maxCourts).catch(e => showConfirm({ title: 'No se pudo guardar la pista', message: e?.message || String(e), cancelText: null, variant: 'danger' }));
+    }, [isAdmin, sport, adjustCourtCount, showConfirm]);
 
     const fillDailyCourts = useCallback((day, count) => {
         if (!isAdmin) return;
         currentSlots.filter(s => s.day === day).forEach(s => {
-            updateCourtCount(s.id, count);
+            updateCourtCount(s.id, count).catch(e => console.warn('fillDailyCourts', s.id, e?.message));
         });
     }, [isAdmin, currentSlots, updateCourtCount]);
 
@@ -1874,12 +1969,32 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 baseMatches = matches.filter(m => m.completed || m.published);
             }
         }
+        // ¿Otro administrador ha tocado la jornada desde que se cargó la app? Se relee la BD:
+        // generar con datos viejos duplicaría partidos o fallaría con un error críptico.
+        try {
+            let q = supabase.from('matches').select('id').eq('sport', sport).eq('completed', false);
+            q = isTennis ? q.eq('category', tennisCategory) : q.is('category', null);
+            const { data: liveRows, error: liveErr } = await q;
+            if (liveErr) throw liveErr;
+            const liveIds = new Set((liveRows || []).map(r => r.id));
+            const localIds = new Set(baseMatches.filter(m => !m.completed).map(m => m.id));
+            const differs = liveIds.size !== localIds.size || [...liveIds].some(id => !localIds.has(id));
+            if (differs) {
+                showConfirm({ title: 'La jornada ha cambiado', message: 'Otro administrador ha creado o modificado partidos desde que abriste la app. Recarga la página y vuelve a intentarlo.', cancelText: null, variant: 'warning' });
+                return;
+            }
+        } catch (e) {
+            showConfirm({ title: 'Sin conexión', message: 'No se pudo comprobar el estado de la jornada: ' + (e?.message || e), cancelText: null, variant: 'danger' });
+            return;
+        }
+
         const pendingByTeam = new Set();
         const pendingPerSlot = {};
         baseMatches.forEach(m => {
             if (!m.completed) {
                 pendingByTeam.add(m.t1.id); pendingByTeam.add(m.t2.id);
-                pendingPerSlot[m.slot] = (pendingPerSlot[m.slot] || 0) + 1;
+                // Un APLAZADO sigue bloqueando a sus jugadores, pero ya no reserva pista en su hora vieja
+                if (!m.postponed) pendingPerSlot[m.slot] = (pendingPerSlot[m.slot] || 0) + 1;
             }
         });
         const active = teams.filter(t => !t.week_off);
@@ -1907,6 +2022,11 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         // Sin pistas configuradas no hay tope por hora: las ★ apilarían todos los partidos en
         // la misma hora, así que en ese caso se ignoran y se reparte por día/hora.
         const noCourtsAtAll = Object.keys(courtAvailability).length === 0;
+        // Hay pistas configuradas pero TODAS a 0 (p. ej. tras "Vaciar" los 7 días): no saldría ni un partido
+        if (!noCourtsAtAll && !Object.values(courtAvailability).some(n => n > 0)) {
+            showConfirm({ title: 'Ninguna hora tiene pista', message: 'Todas las horas de esta categoría están a 0 pistas. Pon pistas en "Pistas" antes de generar: ahora mismo no se crearía ningún partido.', cancelText: null, variant: 'warning' });
+            return;
+        }
         const preferred = noCourtsAtAll ? [] : (appSettings?.preferred_slots || []);
         const slotPos = new Map(currentSlots.map((s, i) => [s.id, i]));
         const slotRank = (id) => { const p = preferred.indexOf(id); return p >= 0 ? p : 10000 + (slotPos.get(id) ?? 99999); };
@@ -2005,7 +2125,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         } finally {
             generatingRef.current = false;
         }
-    }, [isAdmin, teams, matches, courtAvailability, currentSlots, appSettings, createSchedule, discardDrafts, updateAppSettings, isTennis, showConfirm]);
+    }, [isAdmin, teams, matches, courtAvailability, currentSlots, appSettings, createSchedule, discardDrafts, updateAppSettings, isTennis, sport, tennisCategory, showConfirm]);
 
     const submitResultHandler = useCallback((matchId, score, winnerId, loserWonSet = false) => {
         if (!isAdmin) return;
@@ -2192,9 +2312,9 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             <div className="w-full max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} availabilitySlots={availabilitySlots} sport={sport} showConfirm={showConfirm} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} publishSchedule={publishSchedule} discardDrafts={discardDrafts} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} showConfirm={showConfirm} />}
-                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
-                {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { showConfirm({ title: 'Error', message: e?.message || String(e), cancelText: null, variant: 'danger' }); } } }} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} onLinkAccount={linkTeamAccount} onUnlinkAccount={unlinkTeamAccount} onToggleWeekOff={updateWeekOff} listUsers={listUsers} showConfirm={showConfirm} />}
+                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
+                {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esos dos jugadores ya tienen otro partido pendiente entre sí. Registra o elimina ese partido antes de reabrir este.' : (e?.message || String(e)); showConfirm({ title: 'No se pudo reabrir', message: msg, cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}
                 {activeTab === 'calendar' && <CalendarView matches={visibleMatches} currentSlots={currentSlots} />}
                 {activeTab === 'standings' && (() => {

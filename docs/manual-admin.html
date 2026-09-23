@@ -42,6 +42,8 @@
   <li><b>Editar disponibilidad</b> (engranaje): para poner las horas de un jugador que no las pone.</li>
   <li><b>Eliminar</b> (X): si ya tiene partidos, la app lo impide para no romper el historial.</li>
   <li><b>Borrar todo</b> (X roja arriba): borra jugadores y partidos <b>solo de la categoría abierta</b>. Sin vuelta atrás.</li>
+  <li><b>"Vincular cuenta"</b> (en la ficha, cuando pone "Sin cuenta"): une la ficha a la cuenta de la persona. Para quien se registró con otro nombre, o tras un "Borrar todo". La vinculación automática al registrarse solo funciona con fichas sin partidos; las que ya tienen historial las unís vosotros aquí. "desvincular" deshace.</li>
+  <li><b>"No juega"</b> (en la ficha): da de baja del generador a quien deja la liga, conservando su historial. Se vuelve a activar pulsando de nuevo.</li>
   <li>Solo vosotros veis la disponibilidad de los jugadores; ellos no ven la de los demás.</li>
 </ul>
 
@@ -50,7 +52,7 @@
 <ul>
   <li>Pulsad un día para desplegarlo y usad <b>–</b> y <b>+</b> para poner cuántas pistas hay a cada hora (máximo 3 en pádel, 7 en tenis). Las horas a 0 salen "sin pista" y desaparecen para los jugadores. <b>"Vaciar"</b> y <b>"Llenar"</b> hacen todo el día de golpe.</li>
   <li><b>"+ Hora fija"</b> (arriba del todo): añade una hora nueva, por ejemplo 09:00, <b>a los 7 días y para siempre</b>. Luego ponéis las pistas de cada día con + y –. Se quita con la × de su etiqueta (no si hay partidos pendientes a esa hora).</li>
-  <li><b>"+ Horario especial (una sola vez)"</b> (dentro de un día): una hora con pista <b>solo para la próxima vez que caiga ese día</b>. Se borra sola al día siguiente. Para una pista extra de un sábado concreto.</li>
+  <li><b>"+ Horario especial (una sola vez)"</b> (dentro de un día): pistas <b>extra</b> solo para la próxima vez que caiga ese día, y se quitan solas al día siguiente. Vale para una hora nueva (11:00) o para una que ya existe (una pista más este sábado a las 16:00: se suma a las fijas sin tocarlas). Se ve como "+1 una sola vez"; la papelera morada las quita.</li>
   <li><b>★ Hora preferente</b>: la estrella al lado de cada hora. El generador intenta primero las horas con estrella (sábado 16:00 y 18:00, viernes 9:00…) y solo después el resto.</li>
   <li>Si no configuráis ninguna pista en una categoría, la app ofrece todas las horas y no limita partidos por hora.</li>
 </ul>
@@ -75,7 +77,7 @@
 <h3>Durante la semana</h3>
 <ul>
   <li><b>Resultado</b>: marcador (6-3 6-4), <b>Ganador</b>, <b>"Perdedor ganó set"</b> si toca, y <b>OK</b>. Los puntos salen solos.</li>
-  <li><b>"Aplazar"</b>: el partido sigue pendiente y bloquea a los dos para la siguiente jornada hasta que lo reprograméis con Editar.</li>
+  <li><b>"Aplazar"</b>: avisa a los dos jugadores; el partido sigue pendiente (bloquea a los dos para la siguiente jornada) pero ya no reserva pista en su hora vieja. Reprogramadlo con Editar.</li>
   <li><b>"W.O."</b>: elegid en "Ganador" al que <b>sí</b> se presentó y pulsad W.O. En pádel pregunta si el ausente avisó con más de 48 h.</li>
   <li><b>Corregir un resultado</b>: en Historial, "Corregir resultado". El partido vuelve a Jornada como pendiente y los puntos se recalculan.</li>
   <li>El <b>chat</b> de un partido lo ven los dos rivales y vosotros, solo cuando está publicado.</li>
@@ -140,11 +142,11 @@
 <table>
   <tr><th style="width:38%">Lo que os dice el jugador</th><th>Qué pasa y qué hacer</th></tr>
   <tr><td>"No me aparecen las horas que habéis puesto"</td><td>Esa hora está a 0 pistas, o la pusisteis en otra categoría. Revisad Pistas en la categoría correcta.</td></tr>
-  <tr><td>"Me sale Cuenta no vinculada"</td><td>Está en un deporte o categoría que no es el suyo. Si es el suyo, avisad a Víctor.</td></tr>
+  <tr><td>"Me sale Cuenta no vinculada"</td><td>Está en un deporte o categoría que no es el suyo. Si es el suyo, en <b>Jugadores</b> buscad su ficha y pulsad <b>"Vincular cuenta"</b>.</td></tr>
   <tr><td>"No puedo tocar mi disponibilidad"</td><td>Tenéis el candado cerrado. Abridlo en Configuración semanal.</td></tr>
   <tr><td>"No veo la jornada"</td><td>Está en borrador: aún no la habéis publicado. O el jugador no tiene grupo.</td></tr>
   <tr><td>"No me ha tocado partido"</td><td>Sin grupo, semana libre, partido anterior sin resultado, o ninguna hora libre que coincida con su rival. El resumen del generador lo dice.</td></tr>
-  <tr><td>"Aparezco dos veces"</td><td>Se registró con un nombre distinto al de su ficha. Borrad la ficha vacía.</td></tr>
+  <tr><td>"Aparezco dos veces"</td><td>Se registró con un nombre distinto al de su ficha. Borrad la ficha vacía (la nueva, sin partidos) y vinculad su cuenta a la ficha buena con "Vincular cuenta".</td></tr>
   <tr><td>"No me llega ningún email"</td><td>La app no manda emails: los avisos son la campana dentro de la app.</td></tr>
   <tr><td>"He perdido la contraseña"</td><td>"¿Olvidaste tu contraseña?" en el login. Si el enlace falla, decidle el email a Víctor.</td></tr>
   <tr><td>"La app tarda en abrir"</td><td>Si nadie ha entrado en unas horas, la primera vez tarda hasta medio minuto. Después va inmediato.</td></tr>

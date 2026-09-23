@@ -248,11 +248,19 @@ export const DataProvider = ({ children }) => {
                     t2: m.t2
                 })));
 
+                // Cupo efectivo = pistas fijas + pistas EXTRA de una sola vez (mientras no caduquen)
                 const courtsMap = {};
                 const metaMap = {};
+                const nowMs = Date.now();
                 courtsResult.data.forEach(c => {
-                    courtsMap[c.slot_id] = c.available_count;
-                    metaMap[c.slot_id] = { expires_at: c.expires_at || null };
+                    const extraActive = (c.extra_once || 0) > 0 && c.extra_expires_at && new Date(c.extra_expires_at).getTime() > nowMs;
+                    courtsMap[c.slot_id] = (c.available_count || 0) + (extraActive ? c.extra_once : 0);
+                    metaMap[c.slot_id] = {
+                        expires_at: c.expires_at || null,
+                        base: c.available_count || 0,
+                        extra_once: extraActive ? c.extra_once : 0,
+                        extra_expires_at: extraActive ? c.extra_expires_at : null
+                    };
                 });
                 setCourts(courtsMap);
                 setCourtsMeta(metaMap);
@@ -286,50 +294,64 @@ export const DataProvider = ({ children }) => {
 
     // --- Actions ---
 
+    // Guardado ATÓMICO en servidor (RPC set_team_availability): o se guarda todo o nada, y si la
+    // BD lo rechaza (candado cerrado después de abrir la app, red caída) el error llega a la UI.
+    // Antes: borrado + inserción por separado sin mirar errores → "guardada" aunque no lo estuviera.
     const updateTeamAvailability = useCallback(async (teamId, availabilitySlotIds) => {
-        try {
-            await supabase.from('availability').delete().eq('team_id', teamId);
-            const slots = currentSlots.filter(s => availabilitySlotIds.includes(s.id));
-            const inserts = slots.map(s => ({
-                team_id: teamId,
-                day: s.day,
-                hour: s.hour
-            }));
-            if (inserts.length > 0) {
-                await supabase.from('availability').insert(inserts);
-            }
-            setTeams(prev => prev.map(t => t.id === teamId ? { ...t, availability: availabilitySlotIds } : t));
-        } catch (error) {
-            console.error('Error updating availability:', error);
-        }
+        const slots = currentSlots.filter(s => availabilitySlotIds.includes(s.id)).map(s => ({ day: s.day, hour: s.hour }));
+        const { error } = await supabase.rpc('set_team_availability', { p_team_id: teamId, p_slots: slots });
+        if (error) throw new Error(error.message || 'No se pudo guardar la disponibilidad.');
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, availability: availabilitySlotIds } : t));
     }, [currentSlots]);
 
     // Ref siempre actualizada de courtsMeta (para no perder/clavar caducidades al hacer upsert)
     const courtsMetaRef = useRef({});
     useEffect(() => { courtsMetaRef.current = courtsMeta; }, [courtsMeta]);
 
+    // Ref del contador actual: dos clics seguidos en +/− ya no pisan el mismo valor (closure viejo)
+    const courtsRef = useRef({});
+    useEffect(() => { courtsRef.current = courts; }, [courts]);
+
+    // `count` es el cupo EFECTIVO que quiere el admin (lo que ve en pantalla). Las pistas extra de una
+    // sola vez se respetan: se ajusta la parte fija. Actualización optimista + reversión si falla.
     const updateCourtCount = useCallback(async (slotId, count) => {
+        const meta = courtsMetaRef.current[slotId] || {};
+        const extra = meta.extra_once || 0;
+        const base = Math.max(0, count - extra);
+        const prevCount = courtsRef.current[slotId] ?? 0;
+        const effective = base + extra;
+        setCourts(prev => ({ ...prev, [slotId]: effective }));
+        courtsRef.current = { ...courtsRef.current, [slotId]: effective };
         try {
-            // expires_at se envía SIEMPRE: si el slot es especial vigente se conserva; si es una
-            // hora normal (o una especial ya caducada que el admin vuelve a usar) queda a null
-            // (permanente). Antes, una fila caducada reaparecía a 0 tras recargar.
-            const expires = courtsMetaRef.current[slotId]?.expires_at ?? null;
+            // expires_at / extra_* se envían SIEMPRE para no perder ni "clavar" caducidades
             const { error } = await supabase
                 .from('court_availability')
                 .upsert({
                     sport,
                     category: sport === 'tennis' ? tennisCategory : null,
                     slot_id: slotId,
-                    available_count: count,
-                    expires_at: expires
+                    available_count: base,
+                    expires_at: meta.expires_at ?? null,
+                    extra_once: extra,
+                    extra_expires_at: extra > 0 ? (meta.extra_expires_at ?? null) : null
                 }, { onConflict: 'sport, category, slot_id' });
             if (error) throw error;
-            setCourts(prev => ({ ...prev, [slotId]: count }));
-            setCourtsMeta(prev => ({ ...prev, [slotId]: { expires_at: expires } }));
+            setCourtsMeta(prev => ({ ...prev, [slotId]: { ...meta, expires_at: meta.expires_at ?? null, base, extra_once: extra, extra_expires_at: extra > 0 ? (meta.extra_expires_at ?? null) : null } }));
         } catch (error) {
             console.error('Error updating court count:', error);
+            setCourts(prev => ({ ...prev, [slotId]: prevCount }));   // revertir
+            courtsRef.current = { ...courtsRef.current, [slotId]: prevCount };
+            throw error;
         }
     }, [sport, tennisCategory]);
+
+    // +1 / −1 sobre el valor REAL actual (no el del closure del botón)
+    const adjustCourtCount = useCallback(async (slotId, delta, maxCourts) => {
+        const cur = courtsRef.current[slotId] ?? 0;
+        const next = Math.max(0, Math.min(maxCourts, cur + delta));
+        if (next === cur) return;
+        await updateCourtCount(slotId, next);
+    }, [updateCourtCount]);
 
     // ─── Recalcula points/matchesPlayed de TODOS los equipos desde la lista de
     //     partidos (única fuente de verdad). Evita divergencias entre BD y UI.
@@ -398,6 +420,15 @@ export const DataProvider = ({ children }) => {
             if (error) throw error;
 
             setMatches(prev => prev.map(m => m.id === matchId ? { ...m, postponed: true } : m));
+
+            // Avisar a los dos (solo si el partido está publicado; un borrador no se ha visto)
+            const match = matchesRef.current.find(m => m.id === matchId);
+            if (match?.published) try {
+                const notifInserts = [];
+                if (match.t1?.user_id) notifInserts.push({ user_id: match.t1.user_id, match_id: matchId, type: 'match_updated', message: `⏸️ Partido aplazado: ${match.t1.name} vs ${match.t2.name}. Os avisaremos con la nueva hora.` });
+                if (match.t2?.user_id) notifInserts.push({ user_id: match.t2.user_id, match_id: matchId, type: 'match_updated', message: `⏸️ Partido aplazado: ${match.t2.name} vs ${match.t1.name}. Os avisaremos con la nueva hora.` });
+                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+            } catch (notifErr) { console.warn('No se pudo avisar del aplazamiento:', notifErr); }
         } catch (error) {
             console.error('Error postponing match:', error);
             alert('Error al aplazar partido: ' + error.message);
@@ -454,12 +485,16 @@ export const DataProvider = ({ children }) => {
     // Crea un partido manual entre dos equipos en un slot concreto
     const createMatch = async ({ team1_id, team2_id, slot_id }) => {
         try {
+            // Mismo tratamiento que los generados: fecha real y nº de pista (tras los pendientes de esa hora)
+            const pendingSameSlot = matchesRef.current.filter(m => !m.completed && !m.postponed && (m.slot || m.slot_id) === slot_id).length;
             const insertRow = {
                 team1_id,
                 team2_id,
                 sport,
                 category: sport === 'tennis' ? tennisCategory : null,
                 slot_id,
+                date: nextDateForSlot(slot_id)?.toISOString() ?? null,
+                court: String(pendingSameSlot + 1),
                 played: false,
                 postponed: false
             };
@@ -510,21 +545,26 @@ export const DataProvider = ({ children }) => {
             // retoca en silencio; el aviso saldrá al publicar).
             if (processed.published) try {
                 const timeStr = slotTimeLabel(processed.slot_id);
+                const before = matchesRef.current.find(m => m.id === matchId);
+                const prevIds = new Set([before?.t1?.id, before?.t2?.id].filter(Boolean));
+                const nowIds = new Set([processed.t1?.id, processed.t2?.id].filter(Boolean));
                 const notifInserts = [];
-                if (processed.t1?.user_id) {
-                    notifInserts.push({
-                        user_id: processed.t1.user_id,
-                        match_id: processed.id,
-                        type: 'match_updated',
-                        message: `✏️ Partido actualizado: ${processed.t1.name} vs ${processed.t2.name} — ${timeStr}.`
-                    });
+                // Quien SALE del partido: se le avisa y se le retiran los avisos antiguos de este partido
+                for (const t of [before?.t1, before?.t2]) {
+                    if (t?.id && !nowIds.has(t.id) && t.user_id) {
+                        await supabase.from('notifications').delete().eq('match_id', matchId).eq('user_id', t.user_id);
+                        notifInserts.push({ user_id: t.user_id, match_id: matchId, type: 'match_cancelled', message: `❌ Ya no juegas ${before.t1.name} vs ${before.t2.name}. Te avisaremos si te asignan otro partido.` });
+                    }
                 }
-                if (processed.t2?.user_id) {
+                // Quien ENTRA nuevo: "nuevo partido"; quien sigue: "partido actualizado"
+                for (const [me, rival] of [[processed.t1, processed.t2], [processed.t2, processed.t1]]) {
+                    if (!me?.user_id) continue;
+                    const isNew = !prevIds.has(me.id);
                     notifInserts.push({
-                        user_id: processed.t2.user_id,
-                        match_id: processed.id,
-                        type: 'match_updated',
-                        message: `✏️ Partido actualizado: ${processed.t2.name} vs ${processed.t1.name} — ${timeStr}.`
+                        user_id: me.user_id, match_id: processed.id,
+                        type: isNew ? 'match_assigned' : 'match_updated',
+                        message: isNew ? `🗓️ Nuevo partido: ${me.name} vs ${rival?.name} — ${timeStr}.`
+                                       : `✏️ Partido actualizado: ${me.name} vs ${rival?.name} — ${timeStr}.`
                     });
                 }
                 if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
@@ -677,6 +717,8 @@ export const DataProvider = ({ children }) => {
         const { error } = await supabase.from('matches').delete().in('id', ids);
         if (error) throw error;
         setMatches(prev => prev.filter(m => !ids.includes(m.id)));
+        // Sin borrador no hay "grupo que va primero" pendiente de consolidar
+        if (appSettings.draft_first_group) { try { await updateAppSettings('draft_first_group', ''); } catch { /* no bloquea */ } }
         return ids.length;
     };
 
@@ -948,7 +990,7 @@ export const DataProvider = ({ children }) => {
     const deleteTeam = async (teamId) => {
         const played = matchesRef.current.filter(m => m.team1_id === teamId || m.team2_id === teamId).length;
         if (played > 0) {
-            const err = new Error(`Este jugador tiene ${played} partido${played !== 1 ? 's' : ''} registrado${played !== 1 ? 's' : ''} y no se puede borrar sin perder el historial. Márcalo como "semana libre" para darlo de baja del generador.`);
+            const err = new Error(`Este jugador tiene ${played} partido${played !== 1 ? 's' : ''} registrado${played !== 1 ? 's' : ''} y no se puede borrar sin perder el historial. Usa el botón "No juega" de su ficha para darlo de baja del generador.`);
             err.code = 'HAS_MATCHES';
             throw err;
         }
@@ -1120,16 +1162,54 @@ export const DataProvider = ({ children }) => {
     }, [appSettings.fixed_hours, appSettings.preferred_slots, updateAppSettings, sport, tennisCategory]);
 
     // Horario especial SOLO ESTA SEMANA en un día concreto: caduca el lunes siguiente.
+    // Pistas EXTRA de una sola vez. Vale tanto para una hora nueva (la fila caduca entera) como para
+    // una hora que ya existe (p. ej. una pista más este sábado a las 16:00: la parte fija no cambia).
     const addSpecialSlot = useCallback(async (slotId, count) => {
         const expires = specialSlotExpiry(slotId).toISOString();
+        const meta = courtsMetaRef.current[slotId] || {};
+        const isKnown = currentSlots.some(s => s.id === slotId);
+        const base = meta.base ?? (isKnown ? (courtsRef.current[slotId] ?? 0) - (meta.extra_once || 0) : 0);
+        const row = {
+            sport, category: sport === 'tennis' ? tennisCategory : null,
+            slot_id: slotId,
+            available_count: Math.max(0, base),
+            expires_at: isKnown ? (meta.expires_at ?? null) : expires,   // hora nueva: la fila entera caduca
+            extra_once: count,
+            extra_expires_at: expires
+        };
+        const { error } = await supabase.from('court_availability').upsert(row, { onConflict: 'sport, category, slot_id' });
+        if (error) throw error;
+        const effective = row.available_count + count;
+        setCourts(prev => ({ ...prev, [slotId]: effective }));
+        courtsRef.current = { ...courtsRef.current, [slotId]: effective };
+        setCourtsMeta(prev => ({ ...prev, [slotId]: { expires_at: row.expires_at, base: row.available_count, extra_once: count, extra_expires_at: expires } }));
+    }, [sport, tennisCategory, currentSlots]);
+
+    // Quita las pistas extra de una sola vez de una hora (la parte fija se queda como estaba)
+    const clearExtraCourts = useCallback(async (slotId) => {
+        const meta = courtsMetaRef.current[slotId] || {};
+        const base = meta.base ?? 0;
         const { error } = await supabase.from('court_availability').upsert({
             sport, category: sport === 'tennis' ? tennisCategory : null,
-            slot_id: slotId, available_count: count, expires_at: expires
+            slot_id: slotId, available_count: base, expires_at: meta.expires_at ?? null, extra_once: 0, extra_expires_at: null
         }, { onConflict: 'sport, category, slot_id' });
         if (error) throw error;
-        setCourts(prev => ({ ...prev, [slotId]: count }));
-        setCourtsMeta(prev => ({ ...prev, [slotId]: { expires_at: expires } }));
+        setCourts(prev => ({ ...prev, [slotId]: base }));
+        courtsRef.current = { ...courtsRef.current, [slotId]: base };
+        setCourtsMeta(prev => ({ ...prev, [slotId]: { ...meta, extra_once: 0, extra_expires_at: null } }));
     }, [sport, tennisCategory]);
+
+    // ─── Vincular / desvincular una cuenta a una ficha (solo admin; RPC con salvaguardas) ───
+    const linkTeamAccount = useCallback(async (teamId, userId) => {
+        const { error } = await supabase.rpc('admin_link_team', { p_team_id: teamId, p_user_id: userId });
+        if (error) throw new Error(error.message);
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, user_id: userId } : t));
+    }, []);
+    const unlinkTeamAccount = useCallback(async (teamId) => {
+        const { error } = await supabase.from('teams').update({ user_id: null }).eq('id', teamId);
+        if (error) throw new Error(error.message);
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, user_id: null } : t));
+    }, []);
 
     // Borra un horario (especial o extra de un día). Falla si hay partidos pendientes en él.
     const removeSlot = useCallback(async (slotId) => {
@@ -1179,15 +1259,19 @@ export const DataProvider = ({ children }) => {
         addFixedHour,
         removeFixedHour,
         addSpecialSlot,
+        clearExtraCourts,
+        adjustCourtCount,
         removeSlot,
         togglePreferredSlot,
+        linkTeamAccount,
+        unlinkTeamAccount,
         generateDemoData,
         listUsers,
         setUserRole,
         loading,
         currentSlots,
         availabilitySlots
-    }), [teams, matches, courts, courtsMeta, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, addFixedHour, removeFixedHour, addSpecialSlot, removeSlot, togglePreferredSlot]);
+    }), [teams, matches, courts, courtsMeta, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, adjustCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, addFixedHour, removeFixedHour, addSpecialSlot, clearExtraCourts, removeSlot, togglePreferredSlot, linkTeamAccount, unlinkTeamAccount]);
 
     return (
         <DataContext.Provider value={value}>

@@ -111,13 +111,12 @@ export const AuthProvider = ({ children }) => {
     };
 
     const register = async (name, email, password, sport, category = null, inviteCode = '') => {
-        // 1) Código de invitación del club (se valida aquí para dar un mensaje claro
-        //    y lo vuelve a comprobar el trigger de BD por si alguien se salta la app)
-        const { data: codeOk, error: codeErr } = await supabase.rpc('check_invite_code', { p_code: inviteCode.trim() });
-        if (codeErr) throw codeErr;
-        if (!codeOk) { const e = new Error('INVITE_CODE_INVALID'); e.code = 'INVITE_CODE_INVALID'; throw e; }
+        // El código de invitación lo comprueba SOLO el trigger de BD al crear la cuenta
+        // (antes había una RPC pública de comprobación que servía de oráculo para adivinarlo
+        // por fuerza bruta). Si es incorrecto, signUp falla y se traduce abajo.
+        if (!inviteCode.trim()) { const e = new Error('INVITE_CODE_INVALID'); e.code = 'INVITE_CODE_INVALID'; throw e; }
 
-        // 2) Los datos se pasan como metadata para que el trigger de BD
+        // Los datos se pasan como metadata para que el trigger de BD
         //    cree automáticamente el perfil y equipo (bypassa RLS)
         const { data, error } = await supabase.auth.signUp({
             email,
