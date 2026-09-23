@@ -13,7 +13,7 @@ export const useData = () => {
     return context;
 };
 
-const generateSlots = (sport, category) => {
+export const generateSlots = (sport, category) => {
     const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
     let hours = [];
 
@@ -97,24 +97,60 @@ export const DataProvider = ({ children }) => {
     const [teams, setTeams] = useState([]);
     const [matches, setMatches] = useState([]);
     const [courts, setCourts] = useState({});
+    // Metadatos por pista: { [slot_id]: { expires_at } } — expires_at ≠ null = "horario especial
+    // solo esta semana" (caduca solo el lunes siguiente).
+    const [courtsMeta, setCourtsMeta] = useState({});
     // Referencia siempre actualizada a matches: evita closures obsoletos cuando el admin
     // registra varios resultados seguidos (el segundo pisaba al primero hasta recargar).
     const matchesRef = useRef([]);
     useEffect(() => { matchesRef.current = matches; }, [matches]);
-    const [appSettings, setAppSettings] = useState({ availability_locked: false, availability_deadline_label: '' });
+    const [appSettings, setAppSettings] = useState({
+        availability_locked: false, availability_deadline_label: '',
+        fixed_hours: [],        // horas añadidas por el admin para TODOS los días (además de las base)
+        preferred_slots: [],    // horarios "preferentes": el generador los intenta primero
+        last_first_group: '',   // grupo que fue primero en la última jornada PUBLICADA (rotación)
+        draft_first_group: ''   // grupo que va primero en el borrador actual (se consolida al publicar)
+    });
 
     // ⚡ Declarado ANTES de los useCallback que lo usan como dependencia
-    // Universo de horarios = horas base del deporte ∪ cualquier horario que el admin haya
-    // creado como pista en la BD (antes los "horarios especiales" vivían solo en el
-    // localStorage de un admin y ni jugadores ni generador los veían).
+    // Universo de horarios = horas base del deporte ∪ horas fijas del admin (todos los días)
+    // ∪ cualquier horario que exista como pista en la BD (especiales de esta semana, etc.).
     const currentSlots = useMemo(() => {
         const base = generateSlots(sport, tennisCategory);
         const seen = new Set(base.map(s => s.id));
+        const fixed = [];
+        (appSettings.fixed_hours || []).forEach(hour => {
+            DAY_ORDER.forEach(day => {
+                const id = `${day.substring(0, 3).toLowerCase()}_${hour}`;
+                if (!seen.has(id)) { seen.add(id); fixed.push({ id, day, hour, label: `${day} ${hour}` }); }
+            });
+        });
         const extra = Object.keys(courts).map(parseSlotId).filter(Boolean).filter(s => !seen.has(s.id));
-        return [...base, ...extra].sort((a, b) =>
+        extra.forEach(s => seen.add(s.id));
+        // Un horario con partido pendiente nunca desaparece de la rejilla, aunque su pista
+        // especial haya caducado o el admin la haya quitado: el partido sigue mostrando día/hora.
+        const inUse = matches.filter(m => !m.completed).map(m => parseSlotId(m.slot || m.slot_id)).filter(Boolean).filter(s => !seen.has(s.id));
+        return [...base, ...fixed, ...extra, ...inUse].sort((a, b) =>
             (DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day)) || a.hour.localeCompare(b.hour)
         );
-    }, [sport, tennisCategory, courts]);
+    }, [sport, tennisCategory, courts, appSettings.fixed_hours, matches]);
+
+    // Etiqueta legible de cualquier slot ("sáb_09:00" → "Sábado a las 09:00"), también de los
+    // horarios especiales que no están en las horas base.
+    const slotTimeLabel = (slotId) => {
+        const s = parseSlotId(slotId);
+        return s ? `${s.day} a las ${s.hour}` : 'fecha por confirmar';
+    };
+
+    // Caducidad de un horario especial: la madrugada siguiente a la PRÓXIMA vez que caiga ese
+    // día/hora (así vale para una jornada generada a mitad de semana: el partido del lunes
+    // que viene sigue teniendo su pista hasta que se juega).
+    const specialSlotExpiry = (slotId) => {
+        const d = nextDateForSlot(slotId) || new Date();
+        d.setDate(d.getDate() + 1);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    };
 
     // Horarios que un jugador puede MARCAR como disponible = solo donde hay pista (>0).
     // Si el admin aún no ha configurado ninguna pista, se ofrecen todos (para poder empezar).
@@ -153,7 +189,9 @@ export const DataProvider = ({ children }) => {
                 let courtsQuery = supabase
                     .from('court_availability')
                     .select('*')
-                    .eq('sport', sport);
+                    .eq('sport', sport)
+                    // Los horarios especiales de una semana caducan solos: no se cargan los vencidos
+                    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
 
                 if (sport === 'tennis') {
                     teamsQuery   = teamsQuery.eq('category', tennisCategory);
@@ -211,8 +249,13 @@ export const DataProvider = ({ children }) => {
                 })));
 
                 const courtsMap = {};
-                courtsResult.data.forEach(c => { courtsMap[c.slot_id] = c.available_count; });
+                const metaMap = {};
+                courtsResult.data.forEach(c => {
+                    courtsMap[c.slot_id] = c.available_count;
+                    metaMap[c.slot_id] = { expires_at: c.expires_at || null };
+                });
                 setCourts(courtsMap);
+                setCourtsMeta(metaMap);
 
                 // Cargar app_settings (claves por ámbito deporte/categoría)
                 const { data: settingsData } = await supabase.from('app_settings').select('*');
@@ -220,9 +263,14 @@ export const DataProvider = ({ children }) => {
                     const s = {};
                     settingsData.forEach(row => { s[row.key] = row.value; });
                     const suffix = sport === 'tennis' ? `tennis_${tennisCategory}` : (sport || 'padel');
+                    const parseList = (raw) => { try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
                     setAppSettings({
                         availability_locked: s[`availability_locked__${suffix}`] === 'true',
-                        availability_deadline_label: s[`availability_deadline_label__${suffix}`] || ''
+                        availability_deadline_label: s[`availability_deadline_label__${suffix}`] || '',
+                        fixed_hours: parseList(s[`fixed_hours__${suffix}`]),
+                        preferred_slots: parseList(s[`preferred_slots__${suffix}`]),
+                        last_first_group: s[`last_first_group__${suffix}`] || '',
+                        draft_first_group: s[`draft_first_group__${suffix}`] || ''
                     });
                 }
 
@@ -256,18 +304,28 @@ export const DataProvider = ({ children }) => {
         }
     }, [currentSlots]);
 
+    // Ref siempre actualizada de courtsMeta (para no perder/clavar caducidades al hacer upsert)
+    const courtsMetaRef = useRef({});
+    useEffect(() => { courtsMetaRef.current = courtsMeta; }, [courtsMeta]);
+
     const updateCourtCount = useCallback(async (slotId, count) => {
         try {
+            // expires_at se envía SIEMPRE: si el slot es especial vigente se conserva; si es una
+            // hora normal (o una especial ya caducada que el admin vuelve a usar) queda a null
+            // (permanente). Antes, una fila caducada reaparecía a 0 tras recargar.
+            const expires = courtsMetaRef.current[slotId]?.expires_at ?? null;
             const { error } = await supabase
                 .from('court_availability')
                 .upsert({
                     sport,
                     category: sport === 'tennis' ? tennisCategory : null,
                     slot_id: slotId,
-                    available_count: count
+                    available_count: count,
+                    expires_at: expires
                 }, { onConflict: 'sport, category, slot_id' });
             if (error) throw error;
             setCourts(prev => ({ ...prev, [slotId]: count }));
+            setCourtsMeta(prev => ({ ...prev, [slotId]: { expires_at: expires } }));
         } catch (error) {
             console.error('Error updating court count:', error);
         }
@@ -292,7 +350,8 @@ export const DataProvider = ({ children }) => {
             // 1. Update Match (los puntos se DERIVAN de los partidos, no se escriben en teams)
             const { error: matchError } = await supabase
                 .from('matches')
-                .update({ completed: true, score, winner_id: winnerId, played: true, loser_won_set: loserWonSet })
+                // published: un resultado siempre se ve (aunque el partido fuese un borrador)
+                .update({ completed: true, score, winner_id: winnerId, played: true, loser_won_set: loserWonSet, published: true })
                 .eq('id', matchId)
                 .select();
 
@@ -306,7 +365,7 @@ export const DataProvider = ({ children }) => {
 
             // 2. Update Local State + recálculo de puntos desde la fuente de verdad
             const updatedMatches = matchesRef.current.map(m => m.id === matchId
-                ? { ...m, completed: true, score, winner_id: winnerId, loser_won_set: loserWonSet }
+                ? { ...m, completed: true, score, winner_id: winnerId, loser_won_set: loserWonSet, published: true }
                 : m);
             setMatches(updatedMatches);
             recomputeTeamsFromMatches(updatedMatches);
@@ -355,7 +414,7 @@ export const DataProvider = ({ children }) => {
             // 1. Update Match
             const { error: matchError } = await supabase
                 .from('matches')
-                .update({ completed: true, score: 'W.O.', winner_id: winnerId, played: true, wo_notified: notified })
+                .update({ completed: true, score: 'W.O.', winner_id: winnerId, played: true, wo_notified: notified, published: true })
                 .eq('id', matchId)
                 .select();
 
@@ -369,7 +428,7 @@ export const DataProvider = ({ children }) => {
 
             // 2. Update Local State + recálculo de puntos desde la fuente de verdad
             const updatedMatches = matchesRef.current.map(m => m.id === matchId
-                ? { ...m, completed: true, score: 'W.O.', winner_id: winnerId, played: true, wo_notified: notified }
+                ? { ...m, completed: true, score: 'W.O.', winner_id: winnerId, played: true, wo_notified: notified, published: true }
                 : m);
             setMatches(updatedMatches);
             recomputeTeamsFromMatches(updatedMatches);
@@ -414,33 +473,8 @@ export const DataProvider = ({ children }) => {
             const processed = { ...data, slot: data.slot_id, t1: data.t1, t2: data.t2 };
             setMatches(prev => [...prev, processed]);
 
-            // Notificaciones
-            try {
-                const slots = generateSlots(sport, tennisCategory);
-                const slotDetails = slots.find(s => s.id === slot_id);
-                const timeStr = slotDetails ? `${slotDetails.day} a las ${slotDetails.hour}` : 'fecha por confirmar';
-                const notifInserts = [];
-                if (processed.t1?.user_id) {
-                    notifInserts.push({
-                        user_id: processed.t1.user_id,
-                        match_id: processed.id,
-                        type: 'match_assigned',
-                        message: `🗓️ Nuevo partido: ${processed.t1.name} vs ${processed.t2.name} — ${timeStr}.`
-                    });
-                }
-                if (processed.t2?.user_id) {
-                    notifInserts.push({
-                        user_id: processed.t2.user_id,
-                        match_id: processed.id,
-                        type: 'match_assigned',
-                        message: `🗓️ Nuevo partido: ${processed.t2.name} vs ${processed.t1.name} — ${timeStr}.`
-                    });
-                }
-                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
-            } catch (notifErr) {
-                console.warn('No se pudo notificar creación de partido:', notifErr);
-            }
-
+            // El partido nace como BORRADOR (published=false): los jugadores no lo ven ni
+            // reciben aviso hasta que el admin pulsa "Publicar jornada" (publishSchedule).
             return processed;
         } catch (error) {
             console.error('Error creating match:', error);
@@ -472,11 +506,10 @@ export const DataProvider = ({ children }) => {
             const processed = { ...data, slot: data.slot_id, t1: data.t1, t2: data.t2 };
             setMatches(prev => prev.map(m => m.id === matchId ? processed : m));
 
-            // Notificación de cambio
-            try {
-                const slots = generateSlots(sport, tennisCategory);
-                const slotDetails = slots.find(s => s.id === processed.slot_id);
-                const timeStr = slotDetails ? `${slotDetails.day} a las ${slotDetails.hour}` : 'fecha por confirmar';
+            // Notificación de cambio — solo si el partido ya está publicado (un borrador se
+            // retoca en silencio; el aviso saldrá al publicar).
+            if (processed.published) try {
+                const timeStr = slotTimeLabel(processed.slot_id);
                 const notifInserts = [];
                 if (processed.t1?.user_id) {
                     notifInserts.push({
@@ -521,8 +554,9 @@ export const DataProvider = ({ children }) => {
 
             setMatches(prev => prev.filter(m => m.id !== matchId));
 
-            // Notificar a los equipos afectados
-            if (match) {
+            // Notificar a los equipos afectados (solo si ya estaba publicado: un borrador
+            // que se elimina nunca llegó a verse)
+            if (match && match.published) {
                 try {
                     const notifInserts = [];
                     if (match.t1?.user_id) {
@@ -573,41 +607,77 @@ export const DataProvider = ({ children }) => {
             }));
             setMatches(prev => [...prev, ...processedNewMatches]);
 
-            // --- Notificaciones a jugadores con cuenta vinculada ---
-            try {
-                const slots = generateSlots(sport, tennisCategory);
-                const notifInserts = [];
-                for (const m of newMatches) {
-                    const slotDetails = slots.find(s => s.id === m.slot);
-                    const timeStr = slotDetails
-                        ? `${slotDetails.day} a las ${slotDetails.hour}`
-                        : 'fecha por confirmar';
-                    if (m.t1?.user_id) {
-                        notifInserts.push({
-                            user_id: m.t1.user_id,
-                            type: 'match_assigned',
-                            message: `🗓️ Nuevo partido: ${m.t1.name} vs ${m.t2.name} — ${timeStr}.`
-                        });
-                    }
-                    if (m.t2?.user_id) {
-                        notifInserts.push({
-                            user_id: m.t2.user_id,
-                            type: 'match_assigned',
-                            message: `🗓️ Nuevo partido: ${m.t2.name} vs ${m.t1.name} — ${timeStr}.`
-                        });
-                    }
-                }
-                if (notifInserts.length > 0) {
-                    await supabase.from('notifications').insert(notifInserts);
-                }
-            } catch (notifErr) {
-                console.warn('No se pudieron enviar notificaciones de jornada:', notifErr);
-            }
+            // La jornada nace en BORRADOR: sin avisos. Los jugadores la ven (y reciben la
+            // notificación) cuando el admin pulsa "Publicar jornada" → publishSchedule().
 
         } catch (error) {
             console.error('Error creating schedule:', error);
             throw error; // que la UI lo muestre en vez de decir "Jornada generada" con la BD vacía
         }
+    };
+
+    // ─── Publicar la jornada: los borradores pasan a visibles y se avisa a los jugadores ───
+    // Devuelve el nº de partidos publicados. Es idempotente (solo toca published=false).
+    const publishSchedule = async () => {
+        // Autoritativo en servidor: se publica lo que la BD tiene como borrador en este ámbito
+        // (no lo que el estado local cree), y se avisa solo de lo que realmente cambió.
+        let q = supabase.from('matches').update({ published: true })
+            .eq('sport', sport).eq('published', false).eq('completed', false);
+        q = sport === 'tennis' ? q.eq('category', tennisCategory) : q.is('category', null);
+        const { data: published, error } = await q.select('id, slot_id, team1_id, team2_id');
+        if (error) throw error;
+        if (!published || published.length === 0) {
+            setMatches(prev => prev.map(m => (!m.completed && !m.published) ? { ...m, published: true } : m));
+            return 0;
+        }
+        const ids = published.map(m => m.id);
+        const localById = Object.fromEntries(matchesRef.current.map(m => [m.id, m]));
+        const drafts = published.map(m => ({ ...(localById[m.id] || {}), ...m, slot: m.slot_id }));
+        setMatches(prev => prev.map(m => ids.includes(m.id) ? { ...m, published: true } : m));
+
+        // Avisos a jugadores con cuenta vinculada (uno por jugador y partido). Las cuentas se
+        // consultan AHORA en la BD: quien se registró después de que el admin abriera la app
+        // también debe recibir su aviso (el estado local tendría su user_id a null).
+        try {
+            const teamIds = [...new Set(drafts.flatMap(m => [m.team1_id ?? m.t1?.id, m.team2_id ?? m.t2?.id]).filter(Boolean))];
+            const { data: fresh } = await supabase.from('teams').select('id, name, user_id').in('id', teamIds);
+            const byId = Object.fromEntries((fresh || []).map(t => [t.id, t]));
+            const notifInserts = [];
+            for (const m of drafts) {
+                const t1 = byId[m.team1_id ?? m.t1?.id] || m.t1;
+                const t2 = byId[m.team2_id ?? m.t2?.id] || m.t2;
+                const timeStr = slotTimeLabel(m.slot || m.slot_id);
+                if (t1?.user_id) notifInserts.push({ user_id: t1.user_id, match_id: m.id, type: 'match_assigned', message: `🗓️ Nuevo partido: ${t1.name} vs ${t2?.name} — ${timeStr}.` });
+                if (t2?.user_id) notifInserts.push({ user_id: t2.user_id, match_id: m.id, type: 'match_assigned', message: `🗓️ Nuevo partido: ${t2.name} vs ${t1?.name} — ${timeStr}.` });
+            }
+            if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+            // Refrescar user_id en el estado local para el resto de la sesión
+            setTeams(prev => prev.map(t => byId[t.id] ? { ...t, user_id: byId[t.id].user_id } : t));
+        } catch (notifErr) {
+            console.warn('No se pudieron enviar notificaciones de jornada:', notifErr);
+        }
+        // La rotación de grupos avanza al PUBLICAR (no al generar): rehacer un borrador no
+        // le quita el turno a nadie.
+        if (appSettings.draft_first_group) {
+            try {
+                await updateAppSettings('last_first_group', appSettings.draft_first_group);
+                await updateAppSettings('draft_first_group', '');
+            } catch { /* no bloquea la publicación */ }
+        }
+        return ids.length;
+    };
+
+    // ─── Descartar TODOS los borradores del ámbito (para rehacer la jornada) ───
+    // Nadie los ha visto ni ha recibido aviso, así que no se notifica nada.
+    const discardDrafts = async () => {
+        const drafts = matchesRef.current.filter(m => !m.published && !m.completed);
+        if (drafts.length === 0) return 0;
+        const ids = drafts.map(m => m.id);
+        try { await supabase.from('notifications').delete().in('match_id', ids); } catch { /* no debería haber */ }
+        const { error } = await supabase.from('matches').delete().in('id', ids);
+        if (error) throw error;
+        setMatches(prev => prev.filter(m => !ids.includes(m.id)));
+        return ids.length;
     };
 
     // --- Helper Functions for Random Data ---
@@ -1007,22 +1077,84 @@ export const DataProvider = ({ children }) => {
         }
     }, []);
 
+    // Ajustes por ámbito (deporte/categoría). Las listas se guardan como JSON.
+    const SCOPED_SETTINGS = ['availability_locked', 'availability_deadline_label', 'fixed_hours', 'preferred_slots', 'last_first_group', 'draft_first_group'];
     const updateAppSettings = useCallback(async (key, value) => {
         try {
-            // availability_locked / availability_deadline_label se guardan por ámbito
-            const physicalKey = (key === 'availability_locked' || key === 'availability_deadline_label')
-                ? scopedSettingKey(key)
-                : key;
-            await supabase.from('app_settings').upsert({ key: physicalKey, value: String(value), updated_at: new Date().toISOString() });
+            const physicalKey = SCOPED_SETTINGS.includes(key) ? scopedSettingKey(key) : key;
+            const stored = Array.isArray(value) ? JSON.stringify(value) : String(value);
+            const { error } = await supabase.from('app_settings').upsert({ key: physicalKey, value: stored, updated_at: new Date().toISOString() });
+            if (error) throw error;
             setAppSettings(prev => ({ ...prev, [key]: key === 'availability_locked' ? value === true || value === 'true' : value }));
         } catch (error) {
             console.error('Error updating app settings:', error);
+            throw error;
         }
     }, [scopedSettingKey]);
 
+    // ─── Pistas: horas fijas, horarios especiales de una semana y horas preferentes ───
+    const pendingUsingHour = (hour) => matchesRef.current.filter(m => !m.completed && (m.slot || m.slot_id || '').endsWith(`_${hour}`));
+    const pendingUsingSlot = (slotId) => matchesRef.current.filter(m => !m.completed && (m.slot || m.slot_id) === slotId);
+
+    // Añade una hora a la rejilla de TODOS los días (permanente). Las pistas se ponen luego con + / −.
+    const addFixedHour = useCallback(async (hour) => {
+        const list = [...new Set([...(appSettings.fixed_hours || []), hour])].sort();
+        await updateAppSettings('fixed_hours', list);
+    }, [appSettings.fixed_hours, updateAppSettings]);
+
+    // Quita una hora fija de todos los días y borra sus pistas. Falla si hay partidos pendientes a esa hora.
+    const removeFixedHour = useCallback(async (hour) => {
+        const inUse = pendingUsingHour(hour);
+        if (inUse.length > 0) throw new Error(`Hay ${inUse.length} partido(s) pendiente(s) a las ${hour}. Registra o cambia esos partidos antes de quitar la hora.`);
+        const { error } = await supabase.from('court_availability').delete()
+            .eq('sport', sport)
+            .filter('category', sport === 'tennis' ? 'eq' : 'is', sport === 'tennis' ? tennisCategory : null)
+            .like('slot_id', `%_${hour}`);
+        if (error) throw error;
+        const list = (appSettings.fixed_hours || []).filter(h => h !== hour);
+        await updateAppSettings('fixed_hours', list);
+        setCourts(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => !id.endsWith(`_${hour}`))));
+        setCourtsMeta(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => !id.endsWith(`_${hour}`))));
+        const pref = (appSettings.preferred_slots || []).filter(id => !id.endsWith(`_${hour}`));
+        if (pref.length !== (appSettings.preferred_slots || []).length) await updateAppSettings('preferred_slots', pref);
+    }, [appSettings.fixed_hours, appSettings.preferred_slots, updateAppSettings, sport, tennisCategory]);
+
+    // Horario especial SOLO ESTA SEMANA en un día concreto: caduca el lunes siguiente.
+    const addSpecialSlot = useCallback(async (slotId, count) => {
+        const expires = specialSlotExpiry(slotId).toISOString();
+        const { error } = await supabase.from('court_availability').upsert({
+            sport, category: sport === 'tennis' ? tennisCategory : null,
+            slot_id: slotId, available_count: count, expires_at: expires
+        }, { onConflict: 'sport, category, slot_id' });
+        if (error) throw error;
+        setCourts(prev => ({ ...prev, [slotId]: count }));
+        setCourtsMeta(prev => ({ ...prev, [slotId]: { expires_at: expires } }));
+    }, [sport, tennisCategory]);
+
+    // Borra un horario (especial o extra de un día). Falla si hay partidos pendientes en él.
+    const removeSlot = useCallback(async (slotId) => {
+        const inUse = pendingUsingSlot(slotId);
+        if (inUse.length > 0) throw new Error(`Hay ${inUse.length} partido(s) pendiente(s) en ese horario. Cámbialos antes de quitarlo.`);
+        const { error } = await supabase.from('court_availability').delete()
+            .eq('sport', sport).eq('slot_id', slotId)
+            .filter('category', sport === 'tennis' ? 'eq' : 'is', sport === 'tennis' ? tennisCategory : null);
+        if (error) throw error;
+        setCourts(prev => { const n = { ...prev }; delete n[slotId]; return n; });
+        setCourtsMeta(prev => { const n = { ...prev }; delete n[slotId]; return n; });
+        const pref = (appSettings.preferred_slots || []).filter(id => id !== slotId);
+        if (pref.length !== (appSettings.preferred_slots || []).length) await updateAppSettings('preferred_slots', pref);
+    }, [sport, tennisCategory, appSettings.preferred_slots, updateAppSettings]);
+
+    // Marca / desmarca un horario como preferente para el generador.
+    const togglePreferredSlot = useCallback(async (slotId) => {
+        const cur = appSettings.preferred_slots || [];
+        const list = cur.includes(slotId) ? cur.filter(id => id !== slotId) : [...cur, slotId];
+        await updateAppSettings('preferred_slots', list);
+    }, [appSettings.preferred_slots, updateAppSettings]);
+
     // ⚡ Memoizado: los consumidores solo re-renderizan cuando los datos realmente cambian
     const value = useMemo(() => ({
-        data: { teams, matches, courts },
+        data: { teams, matches, courts, courtsMeta },
         appSettings,
         updateData,
         updateTeamAvailability,
@@ -1042,13 +1174,20 @@ export const DataProvider = ({ children }) => {
         deleteTeam,
         clearAllData,
         createSchedule,
+        publishSchedule,
+        discardDrafts,
+        addFixedHour,
+        removeFixedHour,
+        addSpecialSlot,
+        removeSlot,
+        togglePreferredSlot,
         generateDemoData,
         listUsers,
         setUserRole,
         loading,
         currentSlots,
         availabilitySlots
-    }), [teams, matches, courts, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings]);
+    }), [teams, matches, courts, courtsMeta, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, addFixedHour, removeFixedHour, addSpecialSlot, removeSlot, togglePreferredSlot]);
 
     return (
         <DataContext.Provider value={value}>

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from '
 import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
-import { useData, nextDateForSlot } from '../context/DataContext';
+import { useData, nextDateForSlot, generateSlots, parseSlotId } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import NotificationsPanel from './NotificationsPanel';
@@ -40,6 +40,8 @@ const Button = ({ children, onClick, variant = "primary", className = "", disabl
 };
 
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+// "1" → "Grupo 1"; "Grupo 1" / "General" → tal cual (evita "Grupo Grupo 1")
+const groupLabel = (g) => /^\d+$/.test(String(g)) ? `Grupo ${g}` : String(g);
 
 // --- Sub-components ---
 
@@ -133,24 +135,55 @@ const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulk
     );
 };
 
-const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, fillDailyCourts, updateCourtCount, showConfirm }) => {
+const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, courtsMeta = {}, fixedHours = [], preferredSlots = [], fillDailyCourts, updateCourtCount, onAddFixedHour, onRemoveFixedHour, onAddSpecialSlot, onRemoveSlot, onTogglePreferred, showConfirm }) => {
     const [expandedDay, setExpandedDay] = useState(DAYS[0]);
     const [addingSlotDay, setAddingSlotDay] = useState(null);
     const [newHour, setNewHour] = useState('');
+    const [newCount, setNewCount] = useState(1);
+    const [newFixedHour, setNewFixedHour] = useState('');
+    const [busy, setBusy] = useState(false);
+    const maxCourts = sport === 'padel' ? 3 : 7;
 
-    // Los horarios especiales ya NO viven en el navegador del admin: se crean como pista en la
-    // BD (court_availability) y así los ven todos (jugadores y generador). Antes solo los veía
-    // el admin que los creó y no aparecían al marcar disponibilidad.
-    const addCustomSlot = (day) => {
-        if (!newHour.match(/^\d{2}:\d{2}$/)) { showConfirm({ title: 'Formato incorrecto', message: 'Usa HH:MM (ej: 15:30)', cancelText: null, variant: 'warning' }); return; }
+    // Horas "de serie" del deporte/categoría: no se pueden quitar (sí dejar a 0).
+    const baseIds = useMemo(() => new Set(generateSlots(sport, tennisCategory).map(s => s.id)), [sport, tennisCategory]);
+    const HH = /^\d{2}:\d{2}$/;
+    const fail = (title, message) => showConfirm({ title, message, cancelText: null, variant: 'warning' });
+
+    // ── Hora fija: se añade a la rejilla de TODOS los días, para siempre ──
+    const addFixed = async () => {
+        if (!HH.test(newFixedHour)) return fail('Formato incorrecto', 'Usa HH:MM (ej: 09:00)');
+        if (fixedHours.includes(newFixedHour) || currentSlots.some(s => s.hour === newFixedHour && baseIds.has(s.id))) return fail('Ya existe', 'Esa hora ya está en la rejilla.');
+        setBusy(true);
+        try { await onAddFixedHour(newFixedHour); setNewFixedHour(''); }
+        catch (e) { fail('No se pudo añadir', e?.message || String(e)); }
+        finally { setBusy(false); }
+    };
+    const removeFixed = async (hour) => {
+        const ok = await showConfirm({ title: `Quitar las ${hour} de todos los días`, message: 'Se borrarán las pistas de esa hora en los 7 días y desaparecerá para los jugadores. Si hay partidos pendientes a esa hora no se podrá quitar.', confirmText: 'Quitar hora', variant: 'danger' });
+        if (!ok) return;
+        try { await onRemoveFixedHour(hour); }
+        catch (e) { fail('No se pudo quitar', e?.message || String(e)); }
+    };
+
+    // ── Horario especial: un día concreto, SOLO esta semana (caduca el lunes siguiente) ──
+    const addSpecial = async (day) => {
+        if (!HH.test(newHour)) return fail('Formato incorrecto', 'Usa HH:MM (ej: 15:30)');
         const id = `${day.substring(0, 3).toLowerCase()}_${newHour}`;
-        if (currentSlots.some(s => s.id === id)) { showConfirm({ title: 'Ya existe', message: 'Ese horario ya está en la lista: ajusta sus pistas con + y −.', cancelText: null, variant: 'info' }); return; }
-        updateCourtCount(id, 1); // crea la fila con 1 pista → visible para todos
-        setAddingSlotDay(null);
-        setNewHour('');
+        if (currentSlots.some(s => s.id === id)) return fail('Ya existe', 'Ese horario ya está en la lista: ajusta sus pistas con + y −.');
+        setBusy(true);
+        try { await onAddSpecialSlot(id, Math.max(1, Math.min(maxCourts, Number(newCount) || 1))); setAddingSlotDay(null); setNewHour(''); setNewCount(1); }
+        catch (e) { fail('No se pudo añadir', e?.message || String(e)); }
+        finally { setBusy(false); }
+    };
+    const removeOne = async (slot) => {
+        const ok = await showConfirm({ title: 'Quitar horario', message: `¿Quitar ${slot.day} ${slot.hour}? Desaparecerá para los jugadores.`, confirmText: 'Quitar', variant: 'danger' });
+        if (!ok) return;
+        try { await onRemoveSlot(slot.id); }
+        catch (e) { fail('No se pudo quitar', e?.message || String(e)); }
     };
 
     const allSlotsForDay = (day) => currentSlots.filter(s => s.day === day);
+    const expiryLabel = (iso) => { const d = new Date(iso); if (isNaN(d)) return ''; d.setDate(d.getDate() - 1); return `para el ${d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })}`; };
 
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
@@ -158,15 +191,41 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                 <div className="p-2 rounded-lg" style={{ background: 'rgba(0,212,255,0.12)', color: 'var(--cyan)' }}>
                     <MapPin size={24} />
                 </div>
-                <div>
+                <div className="min-w-0">
                     <h3 className="font-bold text-white">Disponibilidad de Pistas</h3>
                     <p className="text-sm" style={{ color: 'var(--text-2)' }}>
                         Gestiona los cupos disponibles por hora.
                         {sport === 'tennis' ? (tennisCategory === 'adults' ? ' (Turnos de 2h)' : ' (Turnos de 1h)') : ' (Turnos de 90min)'}
-                        {isAdmin && <span style={{ color: 'var(--cyan)' }}> · Los jugadores solo pueden marcar disponibilidad en las horas con pista (&gt;0). Añade horas nuevas con "+ Horario especial".</span>}
                     </p>
+                    {isAdmin && (
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
+                            Los jugadores solo pueden marcar disponibilidad en las horas con pista (&gt;0). <b style={{ color: '#FFC107' }}>★</b> = hora preferente: el generador la intenta antes que las demás.
+                        </p>
+                    )}
                 </div>
             </div>
+
+            {/* Horas fijas (todos los días) */}
+            {isAdmin && (
+                <div className="p-4 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Horas fijas (todos los días):</span>
+                        {fixedHours.length === 0 && <span className="text-xs" style={{ color: 'var(--text-3)' }}>ninguna añadida · las de serie ya están en la rejilla</span>}
+                        {fixedHours.map(h => (
+                            <span key={h} className="inline-flex items-center gap-1 text-xs font-mono px-2 py-1 rounded-md" style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.25)' }}>
+                                {h}
+                                <button onClick={() => removeFixed(h)} title={`Quitar las ${h} de todos los días`} className="ml-1 hover:text-white" style={{ color: '#ff6b6b' }}>×</button>
+                            </span>
+                        ))}
+                        <div className="flex items-center gap-1 ml-auto">
+                            <input className="cyber-input px-2 py-1 rounded text-sm font-mono w-20" placeholder="HH:MM" value={newFixedHour}
+                                onChange={e => setNewFixedHour(e.target.value)} onKeyDown={e => e.key === 'Enter' && addFixed()} />
+                            <button onClick={addFixed} disabled={busy} className="text-xs px-3 py-1.5 rounded-md font-bold" style={{ background: 'rgba(0,255,135,0.15)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.3)' }}>+ Hora fija</button>
+                        </div>
+                    </div>
+                    <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>Una hora fija se queda para siempre en los 7 días (luego pones cuántas pistas hay en cada uno). Para una pista puntual de una sola semana usa "+ Horario especial" dentro del día.</p>
+                </div>
+            )}
 
             <div className="grid gap-3">
                 {DAYS.map(day => {
@@ -193,53 +252,67 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                                     {isAdmin && (
                                         <div className="flex justify-between mb-4 gap-2 items-center flex-wrap p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                                             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Relleno Rápido:</span>
-                                            <div className="flex gap-2 items-center">
+                                            <div className="flex gap-2 items-center flex-wrap">
                                                 <button onClick={() => fillDailyCourts(day, 0)} className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>Vaciar</button>
-                                                <button onClick={() => fillDailyCourts(day, sport === 'padel' ? 3 : 7)} className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.15)' }}>Llenar</button>
-                                                <button onClick={(e) => { e.stopPropagation(); setAddingSlotDay(addingSlotDay === day ? null : day); setNewHour(''); }}
+                                                <button onClick={() => fillDailyCourts(day, maxCourts)} className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.15)' }}>Llenar</button>
+                                                <button onClick={(e) => { e.stopPropagation(); setAddingSlotDay(addingSlotDay === day ? null : day); setNewHour(''); setNewCount(1); }}
                                                     className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1"
-                                                    style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>
-                                                    + Horario especial
+                                                    style={{ background: 'rgba(171,71,188,0.10)', color: '#CE93D8', border: '1px solid rgba(171,71,188,0.35)' }}>
+                                                    + Horario especial (una sola vez)
                                                 </button>
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Add custom slot form */}
+                                    {/* Formulario de horario especial de esta semana */}
                                     {isAdmin && addingSlotDay === day && (
-                                        <div className="mb-4 flex items-center gap-2 p-3 rounded-lg" style={{ background: 'rgba(0,255,135,0.06)', border: '1px solid rgba(0,255,135,0.2)' }}>
-                                            <Clock size={16} style={{ color: '#00ff87' }} />
-                                            <span className="text-sm text-white">Añadir hora:</span>
-                                            <input
-                                                className="cyber-input px-2 py-1 rounded text-sm font-mono w-24"
-                                                placeholder="HH:MM"
-                                                value={newHour}
-                                                onChange={e => setNewHour(e.target.value)}
-                                                onKeyDown={e => e.key === 'Enter' && addCustomSlot(day)}
-                                                autoFocus
-                                            />
-                                            <button onClick={() => addCustomSlot(day)} className="text-xs px-3 py-1.5 rounded-md font-bold" style={{ background: 'rgba(0,255,135,0.15)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.3)' }}>Añadir</button>
+                                        <div className="mb-4 flex items-center gap-2 flex-wrap p-3 rounded-lg" style={{ background: 'rgba(171,71,188,0.08)', border: '1px solid rgba(171,71,188,0.3)' }}>
+                                            <Clock size={16} style={{ color: '#CE93D8' }} />
+                                            <span className="text-sm text-white">{day}, hora:</span>
+                                            <input className="cyber-input px-2 py-1 rounded text-sm font-mono w-24" placeholder="HH:MM" value={newHour}
+                                                onChange={e => setNewHour(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSpecial(day)} autoFocus />
+                                            <span className="text-sm text-white">pistas:</span>
+                                            <input type="number" min={1} max={maxCourts} className="cyber-input px-2 py-1 rounded text-sm w-16" value={newCount} onChange={e => setNewCount(e.target.value)} />
+                                            <button onClick={() => addSpecial(day)} disabled={busy} className="text-xs px-3 py-1.5 rounded-md font-bold" style={{ background: 'rgba(171,71,188,0.2)', color: '#CE93D8', border: '1px solid rgba(171,71,188,0.4)' }}>Añadir</button>
                                             <button onClick={() => setAddingSlotDay(null)} className="text-xs px-2 py-1.5 rounded-md" style={{ color: 'var(--text-3)' }}>Cancelar</button>
+                                            <span className="text-[11px] w-full" style={{ color: 'var(--text-3)' }}>Vale para la próxima vez que caiga ese día y se borra sola al día siguiente. Para una hora permanente usa "+ Hora fija" arriba.</span>
                                         </div>
                                     )}
 
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                        {allSlots.map(slot => (
+                                        {allSlots.map(slot => {
+                                            const count = courtAvailability[slot.id] || 0;
+                                            const isSpecial = !!courtsMeta[slot.id]?.expires_at;
+                                            const isFixed = !baseIds.has(slot.id) && fixedHours.includes(slot.hour);
+                                            const isExtra = !baseIds.has(slot.id) && !isFixed && !isSpecial;   // creado como pista suelta
+                                            const isPref = preferredSlots.includes(slot.id);
+                                            return (
                                             <div key={slot.id} className="flex justify-between items-center p-3 rounded-lg transition-colors"
-                                                style={{ background: (courtAvailability[slot.id] || 0) > 0 ? 'rgba(0,212,255,0.04)' : 'rgba(255,255,255,0.03)', border: (courtAvailability[slot.id] || 0) > 0 ? '1px solid rgba(0,212,255,0.2)' : '1px solid var(--border)' }}>
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-mono font-bold text-white">{slot.hour}</span>
-                                                    {(courtAvailability[slot.id] || 0) === 0 && <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>sin pista</span>}
+                                                style={{ background: count > 0 ? 'rgba(0,212,255,0.04)' : 'rgba(255,255,255,0.03)', border: isSpecial ? '1px solid rgba(171,71,188,0.45)' : count > 0 ? '1px solid rgba(0,212,255,0.2)' : '1px solid var(--border)' }}>
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-sm font-mono font-bold text-white flex items-center gap-1">
+                                                        {isAdmin && (
+                                                            <button onClick={() => Promise.resolve(onTogglePreferred(slot.id)).catch(e => fail('No se pudo marcar', e?.message || String(e)))} title={isPref ? 'Quitar de preferentes' : 'Marcar como hora preferente (el generador la intenta primero)'}
+                                                                className="text-base leading-none" style={{ color: isPref ? '#FFC107' : 'rgba(255,255,255,0.25)' }}>{isPref ? '★' : '☆'}</button>
+                                                        )}
+                                                        {!isAdmin && isPref && <span style={{ color: '#FFC107' }}>★</span>}
+                                                        {slot.hour}
+                                                    </span>
+                                                    {count === 0 && <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>sin pista</span>}
+                                                    {isSpecial && <span className="text-[10px]" style={{ color: '#CE93D8' }}>una sola vez · {expiryLabel(courtsMeta[slot.id].expires_at)}</span>}
+                                                    {isFixed && <span className="text-[10px]" style={{ color: '#00ff87' }}>hora fija</span>}
                                                 </div>
                                                 <div className="flex items-center gap-1">
                                                     {isAdmin && <button onClick={() => updateCourtCount(slot.id, -1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(229,57,53,0.1)', color: '#E53935', border: '1px solid rgba(229,57,53,0.2)' }}>-</button>}
-                                                    <span className="w-7 text-center font-bold" style={{ color: (courtAvailability[slot.id] || 0) === 0 ? '#ff6b6b' : 'var(--cyan)' }}>
-                                                        {courtAvailability[slot.id] || 0}
-                                                    </span>
+                                                    <span className="w-7 text-center font-bold" style={{ color: count === 0 ? '#ff6b6b' : 'var(--cyan)' }}>{count}</span>
                                                     {isAdmin && <button onClick={() => updateCourtCount(slot.id, 1)} className="w-7 h-7 flex items-center justify-center rounded-lg font-bold" style={{ background: 'rgba(0,255,135,0.08)', color: '#00ff87', border: '1px solid rgba(0,255,135,0.2)' }}>+</button>}
+                                                    {isAdmin && (isSpecial || isExtra) && (
+                                                        <button onClick={() => removeOne(slot)} title="Quitar este horario" className="w-7 h-7 flex items-center justify-center rounded-lg" style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}><Trash2 size={13} /></button>
+                                                    )}
                                                 </div>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
@@ -667,17 +740,64 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
     );
 });
 
-const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, onChatClick, isTennis, appSettings, updateAppSettings, showConfirm }) => {
+const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, publishSchedule, discardDrafts, onChatClick, isTennis, appSettings, updateAppSettings, showConfirm }) => {
     const { user } = useAuth();
     // Equipo del usuario logueado (para resaltar "Tu partido" y ponerlo el primero)
     const myTeamId = useMemo(() => (teams || []).find(t => t.user_id === user?.id)?.id ?? null, [teams, user?.id]);
+    // Los borradores (published=false) solo los ve el admin. La BD ya los oculta a los
+    // jugadores; el filtro aquí cubre el modo "Ver como Jugador".
     const activeMatches = useMemo(() => {
-        const list = matches.filter(m => !m.completed);
+        const list = matches.filter(m => !m.completed && (isAdmin || m.published));
         if (!myTeamId) return list;
         const isMine = (m) => (m.t1?.id === myTeamId || m.t2?.id === myTeamId) ? 1 : 0;
         return [...list].sort((a, b) => isMine(b) - isMine(a));
-    }, [matches, myTeamId]);
+    }, [matches, myTeamId, isAdmin]);
+    const drafts = useMemo(() => matches.filter(m => !m.completed && !m.published), [matches]);
     const label = isTennis ? 'jugadores' : 'parejas';
+
+    // ─── Rotación de grupos: qué grupo va primero en esta jornada ───
+    const groupList = useMemo(() => {
+        const g = [...new Set((teams || []).map(t => t.group).filter(Boolean))];
+        return g.sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+    }, [teams]);
+    const nextInRotation = useMemo(() => {
+        if (groupList.length === 0) return '';
+        // Con un borrador en curso se mantiene su grupo: rehacerlo no avanza la rotación
+        if (drafts.length > 0 && appSettings?.draft_first_group && groupList.includes(appSettings.draft_first_group)) return appSettings.draft_first_group;
+        const last = appSettings?.last_first_group || '';
+        const idx = groupList.indexOf(last);
+        return groupList[(idx + 1) % groupList.length];   // sin último (-1) → el primero
+    }, [groupList, appSettings?.last_first_group, appSettings?.draft_first_group, drafts.length]);
+    const gl = groupLabel;
+    const [startGroup, setStartGroup] = useState('');       // '' = automático (rotación)
+    const [publishing, setPublishing] = useState(false);
+    const handleDiscard = useCallback(async () => {
+        const ok = await showConfirm({
+            title: 'Descartar borradores',
+            message: `Se eliminarán los ${drafts.length} partido(s) en borrador. Nadie los ha visto ni ha recibido aviso, así que no pasa nada: podrás generar la jornada de nuevo.`,
+            confirmText: 'Descartar', variant: 'danger'
+        });
+        if (!ok) return;
+        try { await discardDrafts(); }
+        catch (e) { showConfirm({ title: 'No se pudo descartar', message: e?.message || String(e), cancelText: null, variant: 'danger' }); }
+    }, [drafts.length, discardDrafts, showConfirm]);
+    const handlePublish = useCallback(async () => {
+        const withAccount = drafts.filter(m => m.t1?.user_id || m.t2?.user_id).length;
+        const ok = await showConfirm({
+            title: 'Publicar jornada',
+            message: `Se publicarán ${drafts.length} partido(s). A partir de ese momento los jugadores los verán en su Jornada` +
+                (withAccount ? ` y recibirán el aviso en la app.` : `.`) + `\n\n¿Has revisado horarios y pistas?`,
+            confirmText: 'Publicar', variant: 'info'
+        });
+        if (!ok) return;
+        setPublishing(true);
+        try {
+            const n = await publishSchedule();
+            await showConfirm({ title: 'Jornada publicada', message: `${n} partido(s) ya visibles para los jugadores.`, cancelText: null, variant: 'success' });
+        } catch (e) {
+            showConfirm({ title: 'No se pudo publicar', message: e?.message || String(e), cancelText: null, variant: 'danger' });
+        } finally { setPublishing(false); }
+    }, [drafts, publishSchedule, showConfirm]);
     const [deadlineInput, setDeadlineInput] = useState(appSettings?.availability_deadline_label || '');
     // Sincronizar el plazo al cambiar de deporte/categoría (antes se inicializaba una sola vez y pisaba el de otra categoría)
     useEffect(() => { setDeadlineInput(appSettings?.availability_deadline_label || ''); }, [appSettings?.availability_deadline_label]);
@@ -745,7 +865,8 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
         if (!editorMatch) return;
         const ok = await showConfirm({
             title: '¿Eliminar partido?',
-            message: `Se eliminará el partido ${editorMatch.t1?.name} vs ${editorMatch.t2?.name} y se notificará a los equipos.`,
+            message: `Se eliminará el partido ${editorMatch.t1?.name} vs ${editorMatch.t2?.name}` +
+                (editorMatch.published ? ' y se notificará a los equipos.' : '. Es un borrador: los jugadores no lo han visto y no recibirán ningún aviso.'),
             confirmText: 'Eliminar',
             variant: 'danger'
         });
@@ -795,18 +916,46 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                         </div>
                     </div>
                     <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>Bloquea cuando quieras generar la jornada para que nadie modifique su disponibilidad.</p>
+                    {groupList.length > 1 && (
+                        <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                            <label className="text-xs" style={{ color: 'var(--text-2)' }}>Grupo que va primero esta jornada (se lleva las mejores pistas):</label>
+                            <select value={startGroup} onChange={e => setStartGroup(e.target.value)} className="cyber-input px-3 py-1.5 rounded-lg text-sm" style={{ maxWidth: 260 }}>
+                                <option value="">Automático · rotación → {gl(nextInRotation)}</option>
+                                {groupList.map(g => <option key={g} value={g}>{gl(g)}</option>)}
+                            </select>
+                            {appSettings?.last_first_group && <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>La última jornada publicada empezó por el {gl(appSettings.last_first_group)}.</span>}
+                        </div>
+                    )}
                 </div>
+
+                {/* Borradores pendientes de publicar */}
+                {drafts.length > 0 && (
+                    <div className="p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3" style={{ background: 'rgba(171,71,188,0.10)', border: '1px solid rgba(171,71,188,0.45)' }}>
+                        <div>
+                            <p className="font-bold text-white flex items-center gap-2">📝 {drafts.length} partido(s) en borrador</p>
+                            <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>Los jugadores todavía <b>no los ven</b>. Revisa horarios y pistas, retoca lo que haga falta (Editar / Eliminar / Añadir partido) y publica cuando esté todo bien.</p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                            <Button onClick={handlePublish} disabled={publishing} className="w-full sm:w-auto py-2.5 px-5 border-none text-white" style={{ background: '#AB47BC' }}>
+                                {publishing ? 'Publicando…' : '📣 Publicar jornada'}
+                            </Button>
+                            <Button onClick={handleDiscard} disabled={publishing} variant="ghost" className="w-full sm:w-auto py-2.5 px-4" title="Borrar los borradores para generar la jornada de nuevo" style={{ color: '#ff6b6b', border: '1px solid rgba(229,57,53,0.35)' }}>
+                                <Trash2 size={14} /> Descartar borradores
+                            </Button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Botón generar jornada */}
                 <div className="p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4" style={{ background: 'linear-gradient(135deg, rgba(229,57,53,0.15) 0%, rgba(229,57,53,0.05) 100%)', border: '1px solid rgba(229,57,53,0.3)' }}>
                     <div>
                         <h2 className="text-lg font-bold flex items-center gap-2 mb-1 text-white"><RefreshCw size={16} style={{ color: '#FFC107' }} /> Generador de Jornada</h2>
                         <p className="text-xs" style={{ color: 'var(--text-2)' }}>
-                            Cruza {label} con horarios compatibles, respetando grupos y semana libre.
+                            Cruza {label} con horarios compatibles, respetando grupos, pistas y semana libre. La jornada nace en borrador: nadie la ve hasta que la publiques.
                         </p>
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                        <Button onClick={generateWeeklySchedule} className="bg-brand-red hover:bg-brand-dark text-white border-none w-full sm:w-auto py-2.5 px-5">
+                        <Button onClick={async () => { await generateWeeklySchedule({ startGroup: startGroup || nextInRotation }); setStartGroup(''); }} className="bg-brand-red hover:bg-brand-dark text-white border-none w-full sm:w-auto py-2.5 px-5">
                             Generar Jornada
                         </Button>
                         <button
@@ -839,13 +988,15 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                             <Calendar size={32} />
                         </div>
                         <p className="font-medium" style={{ color: 'var(--text-2)' }}>No hay partidos programados para esta semana.</p>
-                        {isAdmin && <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Utiliza el generador para crear nuevos enfrentamientos.</p>}
+                        {isAdmin
+                            ? <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Utiliza el generador para crear nuevos enfrentamientos.</p>
+                            : <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Cuando los administradores publiquen la jornada, tu partido aparecerá aquí y te llegará un aviso.</p>}
                     </div>
                 )}
 
                 <div className="grid gap-4 md:grid-cols-2">
                     {activeMatches.map(match => {
-                        const slotDetails = currentSlots.find(s => s.id === match.slot);
+                        const slotDetails = currentSlots.find(s => s.id === match.slot) || parseSlotId(match.slot);
                         const mine = !!myTeamId && (match.t1?.id === myTeamId || match.t2?.id === myTeamId);
                         return (
                             <Card key={match.id} className={`flex flex-col overflow-hidden transition-all`} style={{ borderLeft: `3px solid ${match.postponed ? '#F59E0B' : '#E53935'}` }}>
@@ -856,6 +1007,7 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                         {match.date && <span className="text-[10px] font-medium" style={{ color: 'var(--cyan)' }}>{new Date(match.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>}
                                         {match.court && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-1" style={{ background: 'rgba(255,193,7,0.12)', color: '#FFC107', border: '1px solid rgba(255,193,7,0.3)' }}>Pista {match.court}</span>}
                                         {match.postponed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full mt-2" style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}>APLAZADO</span>}
+                                        {isAdmin && !match.published && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full mt-2" title="Los jugadores aún no ven este partido" style={{ color: '#CE93D8', background: 'rgba(171,71,188,0.18)', border: '1px solid rgba(171,71,188,0.45)' }}>BORRADOR</span>}
                                     </div>
                                     <div className="p-3 flex-1 min-w-0 flex flex-col justify-center">
                                         {mine && (
@@ -942,7 +1094,7 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                 )}
                                 {/* Solo los dos rivales (y el admin) pueden abrir el chat: la BD
                                     rechaza los mensajes de terceros, así que mostrarlo confundía. */}
-                                {(mine || isAdmin) && (
+                                {(mine || isAdmin) && match.published && (
                                 <button
                                     onClick={() => onChatClick && onChatClick(match)}
                                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
@@ -1207,7 +1359,7 @@ const HistoryView = memo(({ matches, currentSlots, teams, isAdmin, onCorrect }) 
             )}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {filteredMatches.map(match => {
-                    const slotDetails = currentSlots.find(s => s.id === match.slot);
+                    const slotDetails = currentSlots.find(s => s.id === match.slot) || parseSlotId(match.slot);
                     const isWO = match.score === 'W.O.';
                     const winner = match.winner_id === match.t1.id ? match.t1 : match.t2;
                     const loser = match.winner_id === match.t1.id ? match.t2 : match.t1;
@@ -1554,7 +1706,7 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onToggleTheme }) {
     const { user, logout } = useAuth();
     const { sport, setSport, setRole, tennisCategory, setTennisCategory } = useGame();
-    const { data, appSettings, currentSlots, availabilitySlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
+    const { data, appSettings, currentSlots, availabilitySlots, loading, updateTeamAvailability, updateCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, publishSchedule, discardDrafts, addFixedHour, removeFixedHour, addSpecialSlot, removeSlot, togglePreferredSlot, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
     const [showUsersModal, setShowUsersModal] = useState(false);
     const { unreadCount } = useNotifications();
 
@@ -1587,8 +1739,11 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     const teams = data?.teams || [];
     const matches = data?.matches || [];
     const courtAvailability = data?.courts || {};
+    const courtsMeta = data?.courtsMeta || {};
     const isRealAdmin = user?.role === 'admin';
     const isAdmin = isRealAdmin && !previewAsPlayer;
+    // Lo que ve un jugador (y el modo "Ver como Jugador"): nunca los borradores
+    const visibleMatches = useMemo(() => (isAdmin ? matches : matches.filter(m => m.published || m.completed)), [isAdmin, matches]);
     const isTennis = sport === 'tennis';
 
     // Initialize Role from Auth
@@ -1695,7 +1850,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     }, [isAdmin, currentSlots, updateCourtCount]);
 
     const generatingRef = useRef(false);
-    const generateWeeklyScheduleHandler = useCallback(async () => {
+    const generateWeeklyScheduleHandler = useCallback(async (opts = {}) => {
         if (!isAdmin || generatingRef.current) return;
         const label = isTennis ? 'jugadores' : 'parejas';
 
@@ -1703,9 +1858,24 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         // 1) Quien ya tiene partido pendiente no entra en la nueva jornada.
         // 2) Las pistas ocupadas por partidos pendientes se descuentan.
         // 3) Los jugadores sin grupo no se emparejan (antes cruzaban con cualquier grupo).
+        // ¿Hay borradores? Lo normal es que el admin quiera REHACER la jornada: se descartan
+        // (nadie los ha visto) y se genera de nuevo sin que bloqueen a sus jugadores.
+        let baseMatches = matches;
+        const existingDrafts = matches.filter(m => !m.completed && !m.published);
+        if (existingDrafts.length > 0) {
+            const redo = await showConfirm({
+                title: 'Ya hay una jornada en borrador',
+                message: `Hay ${existingDrafts.length} partido(s) en borrador que los jugadores aún no ven.\n\n¿Descartarlos y generar la jornada de nuevo? (Cancelar = mantenerlos; entonces esos jugadores no entrarán en la nueva generación).`,
+                confirmText: 'Descartar y generar de nuevo', cancelText: 'Mantenerlos', variant: 'warning'
+            });
+            if (redo) {
+                try { await discardDrafts(); } catch (e) { showConfirm({ title: 'No se pudieron descartar', message: e?.message || String(e), cancelText: null, variant: 'danger' }); return; }
+                baseMatches = matches.filter(m => m.completed || m.published);
+            }
+        }
         const pendingByTeam = new Set();
         const pendingPerSlot = {};
-        matches.forEach(m => {
+        baseMatches.forEach(m => {
             if (!m.completed) {
                 pendingByTeam.add(m.t1.id); pendingByTeam.add(m.t2.id);
                 pendingPerSlot[m.slot] = (pendingPerSlot[m.slot] || 0) + 1;
@@ -1717,13 +1887,39 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         const eligible = active.filter(t => t.group && !pendingByTeam.has(t.id));
         const weekOffCount = teams.length - active.length;
 
+        // ── Rotación de grupos ──────────────────────────────────────────────────
+        // El grupo que va primero se lleva las mejores pistas. Si el admin no elige uno,
+        // se sigue la rotación: el siguiente al que fue primero en la última jornada.
+        const naturalSort = (a, b) => String(a).localeCompare(String(b), 'es', { numeric: true });
+        const groupsSorted = [...new Set(eligible.map(t => t.group))].sort(naturalSort);
+        let startGroup = opts.startGroup && groupsSorted.includes(opts.startGroup) ? opts.startGroup : null;
+        if (!startGroup && groupsSorted.length) {
+            const idx = groupsSorted.indexOf(appSettings?.last_first_group || '');
+            startGroup = groupsSorted[(idx + 1) % groupsSorted.length];
+        }
+        const startIdx = Math.max(0, groupsSorted.indexOf(startGroup));
+        const groupOrder = [...groupsSorted.slice(startIdx), ...groupsSorted.slice(0, startIdx)];
+
+        // ── Horas preferentes ───────────────────────────────────────────────────
+        // Para cada pareja se intentan primero las horas marcadas con ★ en Pistas (en su
+        // orden), y solo después el resto por día/hora. Así se llenan antes las horas buenas.
+        // Sin pistas configuradas no hay tope por hora: las ★ apilarían todos los partidos en
+        // la misma hora, así que en ese caso se ignoran y se reparte por día/hora.
+        const noCourtsAtAll = Object.keys(courtAvailability).length === 0;
+        const preferred = noCourtsAtAll ? [] : (appSettings?.preferred_slots || []);
+        const slotPos = new Map(currentSlots.map((s, i) => [s.id, i]));
+        const slotRank = (id) => { const p = preferred.indexOf(id); return p >= 0 ? p : 10000 + (slotPos.get(id) ?? 99999); };
+
         const ok = await showConfirm({
-            title: 'Generar jornada',
+            title: 'Generar jornada (borrador)',
             message: `Se emparejarán ${eligible.length} ${label} disponibles.` +
-                (withPending.length ? `\n• ${withPending.length} con partido pendiente no entran (registra o aplaza primero).` : '') +
+                (groupOrder.length > 1 ? `\n• Orden de grupos: ${groupOrder.map(groupLabel).join(' → ')}. Se reparte por rondas: el primero elige primero (mejores pistas), pero todos los grupos consiguen un partido antes de que ninguno tenga dos.` : '') +
+                (preferred.length ? `\n• ${preferred.length} hora(s) preferente(s) se intentan primero.` : '') +
+                (noCourtsAtAll ? `\n• ⚠️ No hay pistas configuradas: no se limita el nº de partidos por hora.` : '') +
+                (withPending.length ? `\n• ${withPending.length} con partido pendiente no entran (registra su resultado primero, o elimínalo si no se va a jugar).` : '') +
                 (ungrouped.length ? `\n• ${ungrouped.length} sin grupo no entran (asígnales grupo en "Jugadores").` : '') +
                 (weekOffCount ? `\n• ${weekOffCount} con semana libre.` : '') +
-                `\nLas pistas ya ocupadas por partidos pendientes se descuentan.`,
+                `\nLas pistas ya ocupadas por partidos pendientes se descuentan. La jornada quedará en borrador hasta que la publiques.`,
             confirmText: 'Generar jornada', variant: 'info'
         });
         if (!ok) return;
@@ -1739,7 +1935,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 Object.entries(pendingPerSlot).forEach(([slot, n]) => { weeklyCourts[slot] = Math.max(0, (weeklyCourts[slot] || 0) - n); });
             }
             const matchHistory = {};
-            matches.forEach(m => { matchHistory[`${m.t1.id}-${m.t2.id}`] = true; matchHistory[`${m.t2.id}-${m.t1.id}`] = true; });
+            baseMatches.forEach(m => { matchHistory[`${m.t1.id}-${m.t2.id}`] = true; matchHistory[`${m.t2.id}-${m.t1.id}`] = true; });
             let possibleMatchups = [];
             for (let i = 0; i < availableTeams.length; i++) {
                 for (let j = i + 1; j < availableTeams.length; j++) {
@@ -1747,35 +1943,58 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     const t2 = availableTeams[j];
                     if (matchHistory[`${t1.id}-${t2.id}`]) continue;          // ya se enfrentaron (o tienen partido pendiente entre sí)
                     if (t1.group !== t2.group) continue;                         // misma división
-                    const validSlots = t1.availability.filter(slot =>
-                        t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0)
-                    );
-                    if (validSlots.length > 0) possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length });
+                    const validSlots = t1.availability
+                        .filter(slot => t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0))
+                        .sort((a, b) => slotRank(a) - slotRank(b));             // ★ preferentes primero, luego día/hora
+                    if (validSlots.length > 0) possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length, group: t1.group });
                 }
             }
-            possibleMatchups.sort((a, b) => a.difficulty - b.difficulty);
+            // Reparto POR RONDAS siguiendo el orden de rotación: en cada ronda, cada grupo (por
+            // orden) coloca UN partido — el primero elige primero y se lleva las mejores pistas —
+            // y se repite hasta que no quepa nada más. Así, con pistas escasas, ningún grupo se
+            // queda entero sin jugar mientras otro juega dos veces (antes el primero se llevaba
+            // TODAS las pistas). Dentro de cada grupo van antes las parejas con menos horas
+            // compatibles (las difíciles de cuadrar no se quedan fuera).
+            const byGroup = new Map(groupOrder.map(g => [g, []]));
+            possibleMatchups.sort((a, b) => a.difficulty - b.difficulty).forEach(m => { byGroup.get(m.group)?.push(m); });
             const assignedPerSlot = {};
-            possibleMatchups.forEach(match => {
-                if (!scheduledTeamIds.has(match.t1.id) && !scheduledTeamIds.has(match.t2.id)) {
-                    const finalSlot = match.validSlots.find(slot => noCourtsConfig || (weeklyCourts[slot] || 0) > 0);
-                    if (finalSlot) {
-                        const n = (assignedPerSlot[finalSlot] = (assignedPerSlot[finalSlot] || 0) + 1);
-                        schedule.push({
-                            t1: match.t1, t2: match.t2, slot: finalSlot,
-                            court: noCourtsConfig ? null : (pendingPerSlot[finalSlot] || 0) + n,   // nº de pista (tras las ya ocupadas)
-                            date: nextDateForSlot(finalSlot)?.toISOString() ?? null,           // fecha real del partido
-                        });
-                        scheduledTeamIds.add(match.t1.id);
-                        scheduledTeamIds.add(match.t2.id);
-                        if (!noCourtsConfig) weeklyCourts[finalSlot]--;
+            const tryPlace = (match) => {
+                if (scheduledTeamIds.has(match.t1.id) || scheduledTeamIds.has(match.t2.id)) return false;
+                const finalSlot = match.validSlots.find(slot => noCourtsConfig || (weeklyCourts[slot] || 0) > 0);
+                if (!finalSlot) return false;
+                const n = (assignedPerSlot[finalSlot] = (assignedPerSlot[finalSlot] || 0) + 1);
+                schedule.push({
+                    t1: match.t1, t2: match.t2, slot: finalSlot,
+                    court: noCourtsConfig ? null : (pendingPerSlot[finalSlot] || 0) + n,   // nº de pista (tras las ya ocupadas)
+                    date: nextDateForSlot(finalSlot)?.toISOString() ?? null,           // fecha real del partido
+                });
+                scheduledTeamIds.add(match.t1.id);
+                scheduledTeamIds.add(match.t2.id);
+                if (!noCourtsConfig) weeklyCourts[finalSlot]--;
+                return true;
+            };
+            let progress = true;
+            while (progress) {
+                progress = false;
+                for (const g of groupOrder) {
+                    const list = byGroup.get(g) || [];
+                    for (let i = 0; i < list.length; i++) {
+                        if (tryPlace(list[i])) { list.splice(i, 1); progress = true; break; }
                     }
                 }
-            });
+            }
 
             await createSchedule(schedule);
+            // Se anota quién va primero en ESTE borrador; la rotación real avanza al publicar
+            if (groupOrder.length > 1) { try { await updateAppSettings('draft_first_group', groupOrder[0]); } catch { /* no bloquea */ } }
 
             const unassigned = availableTeams.filter(t => !scheduledTeamIds.has(t.id));
-            setGenerationLog(`Jornada generada: ${schedule.length} partidos. Sin rival esta semana: ${unassigned.length} ${label}.` +
+            const perGroup = groupOrder.map(g => {
+                const names = unassigned.filter(t => t.group === g).map(t => t.name);
+                return `${groupLabel(g)}: ${schedule.filter(m => m.t1.group === g).length} partidos` + (names.length ? ` · sin rival: ${names.join(', ')}` : '');
+            }).join(' | ');
+            setGenerationLog(`Jornada generada en BORRADOR: ${schedule.length} partidos. Revisa y pulsa "Publicar jornada" para que los jugadores la vean. ` +
+                (perGroup ? `\n${perGroup}.` : '') +
                 (withPending.length ? ` ${withPending.length} ya tenían partido pendiente.` : '') +
                 (ungrouped.length ? ` ${ungrouped.length} sin grupo.` : '') +
                 (weekOffCount ? ` ${weekOffCount} con semana libre.` : ''));
@@ -1785,7 +2004,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         } finally {
             generatingRef.current = false;
         }
-    }, [isAdmin, teams, matches, courtAvailability, createSchedule, isTennis, showConfirm]);
+    }, [isAdmin, teams, matches, courtAvailability, currentSlots, appSettings, createSchedule, discardDrafts, updateAppSettings, isTennis, showConfirm]);
 
     const submitResultHandler = useCallback((matchId, score, winnerId, loserWonSet = false) => {
         if (!isAdmin) return;
@@ -1971,12 +2190,12 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         return (
             <div className="w-full max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} availabilitySlots={availabilitySlots} sport={sport} showConfirm={showConfirm} />}
-                {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
+                {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} publishSchedule={publishSchedule} discardDrafts={discardDrafts} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
                 {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} showConfirm={showConfirm} />}
-                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} showConfirm={showConfirm} />}
+                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { showConfirm({ title: 'Error', message: e?.message || String(e), cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}
-                {activeTab === 'calendar' && <CalendarView matches={matches} currentSlots={currentSlots} />}
+                {activeTab === 'calendar' && <CalendarView matches={visibleMatches} currentSlots={currentSlots} />}
                 {activeTab === 'standings' && (() => {
                     const GROUP_COLORS = [
                         { accent: '#E53935', border: 'rgba(229,57,53,0.4)', bg: 'rgba(229,57,53,0.08)', tabBg: 'rgba(229,57,53,0.18)' },
