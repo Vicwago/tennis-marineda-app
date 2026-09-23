@@ -9,6 +9,7 @@ import { useNotifications } from '../context/NotificationContext';
 import NotificationsPanel from './NotificationsPanel';
 import MatchChat from './MatchChat';
 import ConfirmDialog, { useConfirm } from './ConfirmDialog';
+import CreditFooter from './CreditFooter';
 
 // --- UI Components ---
 const Card = ({ children, className = "" }) => (
@@ -2636,17 +2637,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                         </button>
                     </div>
                     {/* Crédito */}
-                    <div className="mt-3 pt-3 text-center" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                        <p className="text-xs mb-1" style={{ color: 'var(--text-3)' }}>Hecho por</p>
-                        <p className="text-xs">
-                            <a href="https://victormago.com" target="_blank" rel="noopener noreferrer"
-                                className="font-bold transition-opacity hover:opacity-80"
-                                style={{ color: '#76c1ff' }}>Víctor Mago</a>
-                            <span style={{ color: 'var(--text-3)' }}> · </span>
-                            <a href="https://norteia.es" target="_blank" rel="noopener noreferrer"
-                                className="font-bold transition-opacity hover:opacity-80"
-                                style={{ color: '#76c1ff' }}>NorteIA</a>
-                        </p>
+                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        <CreditFooter />
                     </div>
                 </div>
             </aside>
@@ -2729,6 +2721,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                             </div>
 
                             <button onClick={logout} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-4" style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: '#ff6b6b' }}>Cerrar Sesión</button>
+                            <CreditFooter className="mt-5 pb-2" />
                         </div>
                     </div>
                 )}

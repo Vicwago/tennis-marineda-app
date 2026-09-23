@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { User, Lock, ArrowRight, Loader2, Mail, ArrowLeft, CheckCircle } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
+import CreditFooter from './CreditFooter';
 
 export default function Login({ onNavigateToRegister }) {
     const { login, resetPassword } = useAuth();
@@ -283,20 +284,7 @@ export default function Login({ onNavigateToRegister }) {
                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>
                         Escuela de Tenis Marineda &copy; {new Date().getFullYear()}
                     </p>
-                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>
-                        Hecho por{' '}
-                        <a href="https://victormago.com" target="_blank" rel="noopener noreferrer"
-                            className="font-bold transition-opacity hover:opacity-80"
-                            style={{ color: '#76c1ff' }}>
-                            Víctor Mago
-                        </a>
-                        {' · '}
-                        <a href="https://norteia.es" target="_blank" rel="noopener noreferrer"
-                            className="font-bold transition-opacity hover:opacity-80"
-                            style={{ color: '#76c1ff' }}>
-                            NorteIA
-                        </a>
-                    </p>
+                    <CreditFooter className="mt-1" />
                 </div>
             </div>
         </div>

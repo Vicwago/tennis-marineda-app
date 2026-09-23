@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Mail, Lock, Activity, Eye, EyeOff, CheckCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import logoUrl from '../assets/logo.png';
+import CreditFooter from './CreditFooter';
 
 export default function Register({ onNavigateToLogin }) {
     const { register } = useAuth();
@@ -327,6 +328,7 @@ export default function Register({ onNavigateToLogin }) {
                 <p className="text-center text-xs mt-8" style={{ color: 'var(--text-3)' }}>
                     Escuela de Tenis Marineda © {new Date().getFullYear()}
                 </p>
+                <CreditFooter className="mt-1" />
             </div>
         </div>
     );

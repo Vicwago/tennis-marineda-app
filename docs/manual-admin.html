@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual del administrador — Escuela de Tenis Marineda</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1a1a1e; font-size: 11pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 4px; color: #b71c1c; }
+  .sub { color: #555; margin: 0 0 18px; font-size: 10.5pt; }
+  h2 { font-size: 14.5pt; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #E53935; }
+  h3 { font-size: 12pt; margin: 14px 0 6px; color: #333; }
+  p { margin: 6px 0; }
+  ol, ul { margin: 6px 0 6px 20px; padding: 0; }
+  li { margin: 3px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 10.2pt; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; vertical-align: top; text-align: left; }
+  th { background: #f4f4f6; }
+  .box { background: #fff5f5; border: 1px solid #f3c1c1; border-left: 4px solid #E53935; padding: 10px 12px; margin: 10px 0; border-radius: 4px; }
+  .box.blue { background: #eef7ff; border-color: #bcdcf7; border-left-color: #2c03f3; }
+  .box.purple { background: #f7effa; border-color: #dcc3e6; border-left-color: #AB47BC; }
+  .code { font-family: Consolas, Menlo, monospace; background: #f0f0f2; padding: 1px 5px; border-radius: 3px; }
+  .footer { margin-top: 26px; padding-top: 8px; border-top: 1px solid #ddd; color: #666; font-size: 9.5pt; }
+  .no-break { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+<h1>Manual del administrador</h1>
+<p class="sub">Escuela de Tenis Marineda · app de la liga · para Víctor, Mauri y Braulio · septiembre 2026</p>
+
+<div class="box">
+  <b>La regla que explica casi todos los despistes:</b> todo es independiente por deporte y, en tenis, por categoría. Jugadores, partidos, pistas, plazo y bloqueo de <b>Pádel</b>, <b>Tenis-Adultos</b> y <b>Tenis-Juveniles</b> son tres mundos separados. Lo que configuréis en uno no aparece en otro. Arriba, con Tenis abierto, hay un desplegable Adultos / Juveniles.
+</div>
+<p>App: <b>https://tennis-padel-app-sigma.vercel.app</b> · Código de invitación para los jugadores: <span class="code">MARINEDA2026</span>. Cualquiera con el código entra al instante; no hay aprobación previa. Si no queréis que alguien entre, no le deis el código.</p>
+
+<h2>1. Jugadores</h2>
+<p>Lo normal es que cada jugador se registre solo. Vosotros hacéis dos cosas: <b>darle grupo</b> y, si hace falta, ayudarle.</p>
+<ul>
+  <li><b>Asignar grupo</b>: en la tarjeta del jugador, la etiqueta de grupo es un campo que se escribe ("1", "2"…). Se guarda solo al salir. <b>Sin grupo, un jugador no entra en la jornada.</b> Es vuestro paso obligatorio con cada alta.</li>
+  <li><b>"+ Añadir"</b>: alta a mano (nombre y grupo) para quien no tiene cuenta o no se aclara. Le lleváis vosotros la disponibilidad. Si luego esa persona se registra <b>con ese mismo nombre</b>, su cuenta se une a esa ficha y conserva grupo, puntos e historial. Si escribe otro nombre, aparecerá duplicado: borrad la ficha vacía.</li>
+  <li><b>Importar</b> (botón verde de subir): Excel/CSV o texto pegado. Columnas: nombre, grupo, disponibilidad. No detecta repetidos.</li>
+  <li><b>Editar disponibilidad</b> (engranaje): para poner las horas de un jugador que no las pone.</li>
+  <li><b>Eliminar</b> (X): si ya tiene partidos, la app lo impide para no romper el historial.</li>
+  <li><b>Borrar todo</b> (X roja arriba): borra jugadores y partidos <b>solo de la categoría abierta</b>. Sin vuelta atrás.</li>
+  <li>Solo vosotros veis la disponibilidad de los jugadores; ellos no ven la de los demás.</li>
+</ul>
+
+<h2>2. Pistas</h2>
+<p>Esta pestaña manda sobre todo lo demás: <b>un jugador solo puede marcar disponibilidad en las horas donde hay pista</b>, y el generador solo empareja ahí.</p>
+<ul>
+  <li>Pulsad un día para desplegarlo y usad <b>–</b> y <b>+</b> para poner cuántas pistas hay a cada hora (máximo 3 en pádel, 7 en tenis). Las horas a 0 salen "sin pista" y desaparecen para los jugadores. <b>"Vaciar"</b> y <b>"Llenar"</b> hacen todo el día de golpe.</li>
+  <li><b>"+ Hora fija"</b> (arriba del todo): añade una hora nueva, por ejemplo 09:00, <b>a los 7 días y para siempre</b>. Luego ponéis las pistas de cada día con + y –. Se quita con la × de su etiqueta (no si hay partidos pendientes a esa hora).</li>
+  <li><b>"+ Horario especial (una sola vez)"</b> (dentro de un día): una hora con pista <b>solo para la próxima vez que caiga ese día</b>. Se borra sola al día siguiente. Para una pista extra de un sábado concreto.</li>
+  <li><b>★ Hora preferente</b>: la estrella al lado de cada hora. El generador intenta primero las horas con estrella (sábado 16:00 y 18:00, viernes 9:00…) y solo después el resto.</li>
+  <li>Si no configuráis ninguna pista en una categoría, la app ofrece todas las horas y no limita partidos por hora.</li>
+</ul>
+
+<h2>3. La jornada, paso a paso</h2>
+<h3>Antes de generar</h3>
+<ul>
+  <li><b>⚙️ Configuración semanal</b>: el <b>plazo</b> ("Miércoles 20:00") es solo un aviso que ven los jugadores. El candado <b>🔓 / 🔒</b> <b>bloquea la disponibilidad</b>: cerradlo cuando vayáis a generar para que nadie cambie sus horas.</li>
+  <li><b>"Grupo que va primero esta jornada"</b>: en Automático rota solo (el que fue primero la última vez pasa al final). Podéis forzar un grupo.</li>
+</ul>
+<h3>Generar</h3>
+<p>Pulsad <b>"Generar Jornada"</b>. Antes de hacer nada os enseña un resumen: orden de grupos, cuántos entran y cuántos quedan fuera (sin grupo, con semana libre, con un partido pendiente). Confirmáis y la jornada nace en <b>BORRADOR</b>.</p>
+<div class="box purple">
+  <b>Borrador = los jugadores no ven nada ni reciben aviso.</b> Cada tarjeta lleva la etiqueta BORRADOR y arriba sale un banner morado con el número de partidos. Es vuestro momento de revisar con calma.
+</div>
+<h3>Revisar y publicar</h3>
+<ul>
+  <li><b>Editar</b> (en la tarjeta): cambiar rival u hora. <b>Eliminar</b> dentro de Editar. <b>"+ Añadir partido"</b>: un cruce a mano (no comprueba disponibilidad, grupo ni pistas; mandáis vosotros).</li>
+  <li><b>"Descartar borradores"</b>: borra todos los borradores para empezar de cero. Si pulsáis "Generar Jornada" con borradores, la app os pregunta si los descarta y genera de nuevo.</li>
+  <li><b>"📣 Publicar jornada"</b>: en ese instante los jugadores la ven en su Jornada y les llega el aviso. A partir de aquí, editar o eliminar un partido sí avisa a los afectados.</li>
+</ul>
+<h3>Durante la semana</h3>
+<ul>
+  <li><b>Resultado</b>: marcador (6-3 6-4), <b>Ganador</b>, <b>"Perdedor ganó set"</b> si toca, y <b>OK</b>. Los puntos salen solos.</li>
+  <li><b>"Aplazar"</b>: el partido sigue pendiente y bloquea a los dos para la siguiente jornada hasta que lo reprograméis con Editar.</li>
+  <li><b>"W.O."</b>: elegid en "Ganador" al que <b>sí</b> se presentó y pulsad W.O. En pádel pregunta si el ausente avisó con más de 48 h.</li>
+  <li><b>Corregir un resultado</b>: en Historial, "Corregir resultado". El partido vuelve a Jornada como pendiente y los puntos se recalculan.</li>
+  <li>El <b>chat</b> de un partido lo ven los dos rivales y vosotros, solo cuando está publicado.</li>
+</ul>
+
+<h2>4. Cómo empareja el generador</h2>
+<p><b>Deja fuera</b> a quien tiene un partido pendiente sin resultado, a quien está sin grupo y a quien ha marcado semana libre.</p>
+<p><b>Para cruzar a dos jugadores exige</b> que sean del mismo grupo, que no se hayan enfrentado ya en esta liga, que coincidan en alguna hora y que en esa hora quede pista libre (descontando las que ocupan los pendientes).</p>
+<p><b>Cuando faltan pistas</b> (lo que preguntaba Braulio):</p>
+<ol>
+  <li><b>Rotación de grupos</b>: hay un grupo que va primero cada jornada. En Automático, el que fue primero la última vez pasa al final. La rotación avanza <b>al publicar</b>, no al generar: rehacer un borrador no le quita el turno a nadie.</li>
+  <li><b>Reparto por rondas</b>: en cada ronda, cada grupo coloca <b>un</b> partido siguiendo ese orden, y se repite hasta que no cabe más. El que va primero elige primero y se lleva las mejores pistas, pero <b>todos los grupos consiguen un partido antes de que ninguno tenga dos</b>.</li>
+  <li><b>Horas preferentes</b>: para cada pareja se prueban primero las horas con ★, después las demás por día y hora.</li>
+  <li>Dentro de cada grupo van antes las parejas con menos horas compatibles, para que los difíciles de cuadrar no se queden fuera.</li>
+</ol>
+<p>Un partido por jugador y generación; asigna número de pista y fecha real. Al terminar os dice, grupo por grupo, cuántos partidos ha creado y quién se ha quedado sin rival. Pulsar dos veces no duplica nada.</p>
+
+<h2 class="no-break">5. Puntos</h2>
+<table class="no-break">
+  <tr><th>Situación</th><th style="width:18%">Puntos</th></tr>
+  <tr><td>Gana</td><td>4</td></tr>
+  <tr><td>Pierde</td><td>1</td></tr>
+  <tr><td>Pierde pero ganó un set (casilla "Perdedor ganó set")</td><td>2</td></tr>
+  <tr><td>Gana por W.O.</td><td>4</td></tr>
+  <tr><td>Pierde por W.O. en tenis</td><td>0</td></tr>
+  <tr><td>Pierde por W.O. en pádel: avisó con más de 48 h / no avisó</td><td>0 / −1</td></tr>
+</table>
+<p>Desempate: puntos → victorias → menos partidos jugados → nombre. Los puntos no se editan a mano: para arreglar uno, corregid el resultado.</p>
+
+<h2>6. Otras cosas de administrador</h2>
+<ul>
+  <li><b>Usuarios y roles</b> (menú lateral del ordenador → Perfiles): hacer o quitar administradores. No podéis quitaros el admin a vosotros mismos y siempre queda al menos uno.</li>
+  <li><b>"🔧 Ver como Jugador"</b> (abajo en el menú del ordenador): para ver la app como un jugador y para poner <b>vuestra propia disponibilidad</b>. Es solo visual: vuestra cuenta sigue siendo administrador.</li>
+  <li><b>Ranking → "📋 Copiar"</b>: la clasificación lista para WhatsApp. El "Top 3 asciende" es informativo: la app no sube ni baja a nadie sola.</li>
+  <li><b>Noticias → "Nueva Noticia"</b>: título, imagen y texto. Se publica al momento y no se puede editar ni borrar después.</li>
+</ul>
+
+<h2>7. Lo que NO se puede hacer desde la app</h2>
+<ul>
+  <li>Cambiar el código de invitación (lo cambia Víctor en un minuto si hace falta).</li>
+  <li>Borrar cuentas ni cambiar la contraseña de otro (cada uno usa "¿Olvidaste tu contraseña?").</li>
+  <li>Renombrar a un jugador, cambiarle de deporte o categoría, o editar puntos a mano.</li>
+  <li>Activar la "semana libre" de otro: solo lo hace el propio jugador.</li>
+  <li>Editar o borrar una noticia publicada, ni borrar mensajes del chat.</li>
+  <li>Aprobar registros: hoy entra cualquiera con el código. Si lo queréis con aprobación, se puede añadir.</li>
+</ul>
+
+<h2 class="no-break">8. Rutina semanal recomendada</h2>
+<table>
+  <tr><th style="width:24%">Cuándo</th><th>Qué hacéis</th></tr>
+  <tr><td>Una vez, al empezar</td><td>En <b>Pistas</b>, cuántas pistas a cada hora; añadid las horas que falten con "+ Hora fija" y poned ★ a las buenas. En <b>Jugadores</b>, grupo a todos.</td></tr>
+  <tr><td>Lunes</td><td>En <b>Jornada → Configuración semanal</b>, abrid el candado y poned el plazo. Si un día tenéis una pista extra, añadidla como horario especial.</td></tr>
+  <tr><td>Lunes a miércoles</td><td>Los jugadores marcan su disponibilidad. Revisad en <b>Jugadores</b> quién no la ha puesto y completadla con el engranaje.</td></tr>
+  <tr><td>Al cerrar el plazo</td><td><b>Cerrad el candado</b> y pulsad <b>"Generar Jornada"</b>. Sale en borrador.</td></tr>
+  <tr><td>Revisión</td><td>Mirad el reparto. Retocad (Editar / Eliminar / Añadir) o descartad y generad de nuevo. Cuando esté bien, <b>"📣 Publicar jornada"</b>.</td></tr>
+  <tr><td>Tras publicar</td><td>Pegad el ranking en el grupo con "📋 Copiar".</td></tr>
+  <tr><td>Durante la semana</td><td>Meted <b>marcador y ganador</b> → OK. Lo que no se juegue: Aplazar o W.O.</td></tr>
+  <tr><td>Antes de la siguiente</td><td>Que no quede ningún partido publicado sin resultado: quien lo tenga no entra en la jornada nueva.</td></tr>
+</table>
+
+<h2>9. Problemas frecuentes</h2>
+<table>
+  <tr><th style="width:38%">Lo que os dice el jugador</th><th>Qué pasa y qué hacer</th></tr>
+  <tr><td>"No me aparecen las horas que habéis puesto"</td><td>Esa hora está a 0 pistas, o la pusisteis en otra categoría. Revisad Pistas en la categoría correcta.</td></tr>
+  <tr><td>"Me sale Cuenta no vinculada"</td><td>Está en un deporte o categoría que no es el suyo. Si es el suyo, avisad a Víctor.</td></tr>
+  <tr><td>"No puedo tocar mi disponibilidad"</td><td>Tenéis el candado cerrado. Abridlo en Configuración semanal.</td></tr>
+  <tr><td>"No veo la jornada"</td><td>Está en borrador: aún no la habéis publicado. O el jugador no tiene grupo.</td></tr>
+  <tr><td>"No me ha tocado partido"</td><td>Sin grupo, semana libre, partido anterior sin resultado, o ninguna hora libre que coincida con su rival. El resumen del generador lo dice.</td></tr>
+  <tr><td>"Aparezco dos veces"</td><td>Se registró con un nombre distinto al de su ficha. Borrad la ficha vacía.</td></tr>
+  <tr><td>"No me llega ningún email"</td><td>La app no manda emails: los avisos son la campana dentro de la app.</td></tr>
+  <tr><td>"He perdido la contraseña"</td><td>"¿Olvidaste tu contraseña?" en el login. Si el enlace falla, decidle el email a Víctor.</td></tr>
+  <tr><td>"La app tarda en abrir"</td><td>Si nadie ha entrado en unas horas, la primera vez tarda hasta medio minuto. Después va inmediato.</td></tr>
+</table>
+
+<p class="footer">Escuela de Tenis Marineda · App hecha por <b>Víctor Mago</b> · victormago.com · Instagram @vicwago · NorteIA (norteia.es)</p>
+</body>
+</html>
