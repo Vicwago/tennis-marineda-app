@@ -30,7 +30,7 @@ export default function ResetPassword({ onDone }) {
             await updatePassword(password);
             setDone(true);
         } catch (err) {
-            setError(err.message?.includes('same password') ? 'La nueva contraseña no puede ser igual a la anterior.' : (err.message || 'No se pudo cambiar la contraseña.'));
+            setError(/same password|different from the old/i.test(err.message || '') ? 'La nueva contraseña no puede ser igual a la anterior.' : (err.message || 'No se pudo cambiar la contraseña.'));
         } finally {
             setLoading(false);
         }
