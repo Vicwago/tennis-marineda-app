@@ -15,6 +15,9 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [recoveryMode, setRecoveryMode] = useState(false);
+    // Verificación de código de recuperación en curso: cuando llegue la sesión, la app debe
+    // ir a "nueva contraseña" (no al panel) — se decide en el mismo render que fija el usuario.
+    const pendingRecovery = React.useRef(false);
 
     const fetchProfile = async (sessionUser) => {
         if (!sessionUser) return null;
@@ -72,6 +75,7 @@ export const AuthProvider = ({ children }) => {
         // FUERA del callback con setTimeout(0).
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
+            if (session?.user && pendingRecovery.current) { pendingRecovery.current = false; setRecoveryMode(true); }
             if (session?.user) {
                 // Usuario inmediato con rol por defecto (evita pantalla en blanco)
                 setUser(prev => (prev && prev.id === session.user.id) ? prev : {
@@ -185,9 +189,13 @@ export const AuthProvider = ({ children }) => {
     // (Outlook/Hotmail "Safe Links") lo haya abierto antes y lo haya gastado.
     // Al verificar el código se crea la sesión y la app muestra la pantalla de nueva contraseña.
     const verifyRecoveryCode = async (email, code) => {
+        // No se cambia de pantalla hasta que el código sea válido: si falla, el jugador sigue en
+        // "Email enviado" y ve el error (antes se volvía al login sin explicación).
+        pendingRecovery.current = true;
+        const { data, error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
+        if (error || !data?.session) { pendingRecovery.current = false; throw error || new Error('Código incorrecto o caducado.'); }
+        pendingRecovery.current = false;
         setRecoveryMode(true);
-        const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
-        if (error) { setRecoveryMode(false); throw error; }
     };
 
     const value = {
