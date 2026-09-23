@@ -29,7 +29,7 @@ export default function Login({ onNavigateToRegister }) {
         const code = p.get('error_code') || '';
         const desc = p.get('error_description') || p.get('error') || '';
         const msg = /otp_expired|expired|invalid/i.test(code + ' ' + desc)
-            ? 'El enlace del correo ha caducado o ya se ha usado (algunos correos, como Hotmail, lo abren solos). Pulsa "¿Olvidaste tu contraseña?" y usa el código de 6 dígitos que viene en el correo.'
+            ? 'El enlace del correo ha caducado o ya se ha usado (algunos correos, como Hotmail, lo abren solos). Pulsa "¿Olvidaste tu contraseña?" y usa el código de 8 dígitos que viene en el correo.'
             : 'No se pudo abrir el enlace: ' + desc.replace(/\+/g, ' ');
         setError(msg);
         try { window.history.replaceState({}, '', window.location.pathname); } catch { /* sin history */ }
@@ -38,7 +38,7 @@ export default function Login({ onNavigateToRegister }) {
     const handleVerifyCode = async (e) => {
         e.preventDefault();
         const code = recoveryCode.replace(/\D/g, '');
-        if (code.length < 6) { setError('Escribe los 6 dígitos del código que viene en el correo.'); return; }
+        if (code.length < 6) { setError('Escribe el código completo que viene en el correo (8 dígitos).'); return; }
         setError('');
         setCodeLoading(true);
         try {
@@ -47,7 +47,7 @@ export default function Login({ onNavigateToRegister }) {
         } catch (err) {
             const m = (err.message || '').toLowerCase();
             setError(m.includes('expired') || m.includes('invalid') || m.includes('token')
-                ? 'Código incorrecto o caducado. Comprueba los 6 dígitos o pide un correo nuevo.'
+                ? 'Código incorrecto o caducado. Comprueba los 8 dígitos (usa el correo más reciente) o pide uno nuevo.'
                 : (err.message || 'No se pudo comprobar el código.'));
         } finally {
             setCodeLoading(false);
@@ -125,17 +125,17 @@ export default function Login({ onNavigateToRegister }) {
                     </div>
                     <h2 className="text-xl font-bold text-white mb-2">Email enviado</h2>
                     <p className="text-sm mb-1" style={{ color: 'var(--text-2)' }}>
-                        Si hay una cuenta con <span className="font-bold text-white">{resetEmail}</span>, recibirás un correo con un <b className="text-white">código de 6 dígitos</b>.
+                        Si hay una cuenta con <span className="font-bold text-white">{resetEmail}</span>, recibirás un correo con un <b className="text-white">código de 8 dígitos</b>.
                     </p>
                     <p className="text-xs mb-5" style={{ color: 'var(--text-3)' }}>Revisa también la carpeta de spam. Puede tardar un minuto.</p>
 
                     <form onSubmit={handleVerifyCode} className="text-left space-y-3 mb-5">
                         <label className="block text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Código del correo</label>
                         <input
-                            type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={8}
+                            type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10}
                             value={recoveryCode} onChange={e => setRecoveryCode(e.target.value)}
-                            placeholder="123456" autoFocus
-                            className="cyber-input w-full px-4 py-3 rounded-xl text-center text-2xl font-mono tracking-[0.4em]"
+                            placeholder="12345678" autoFocus
+                            className="cyber-input w-full px-4 py-3 rounded-xl text-center text-2xl font-mono tracking-[0.25em]"
                         />
                         {error && (
                             <div className="px-3 py-2 rounded-lg text-sm text-center" style={{ background: 'rgba(229,57,53,0.12)', border: '1px solid rgba(229,57,53,0.35)', color: '#ff6b6b' }}>{error}</div>
@@ -208,7 +208,7 @@ export default function Login({ onNavigateToRegister }) {
                 {forgotMode ? (
                     <form onSubmit={handleResetPassword} className="space-y-4">
                         <p className="text-sm" style={{ color: 'var(--text-2)' }}>
-                            Introduce tu email y te enviamos un correo con un código de 6 dígitos para crear una nueva contraseña.
+                            Introduce tu email y te enviamos un correo con un código de 8 dígitos para crear una nueva contraseña.
                         </p>
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold uppercase tracking-wider ml-1" style={{ color: 'var(--text-3)' }}>
