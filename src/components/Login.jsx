@@ -208,7 +208,7 @@ export default function Login({ onNavigateToRegister }) {
                 {forgotMode ? (
                     <form onSubmit={handleResetPassword} className="space-y-4">
                         <p className="text-sm" style={{ color: 'var(--text-2)' }}>
-                            Introduce tu email y te enviamos un enlace para crear una nueva contraseña.
+                            Introduce tu email y te enviamos un correo con un código de 6 dígitos para crear una nueva contraseña.
                         </p>
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold uppercase tracking-wider ml-1" style={{ color: 'var(--text-3)' }}>
@@ -232,7 +232,17 @@ export default function Login({ onNavigateToRegister }) {
                             disabled={resetLoading}
                             className="btn-cyber w-full flex items-center justify-center gap-2 mt-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
                         >
-                            {resetLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <>Enviar enlace <ArrowRight className="w-5 h-5" /></>}
+                            {resetLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <>Enviar código <ArrowRight className="w-5 h-5" /></>}
+                        </button>
+
+                        {/* Ya tiene un correo con código (p. ej. cerró la app): no hace falta pedir otro */}
+                        <button
+                            type="button"
+                            onClick={() => { if (!resetEmail.trim()) { setError('Escribe primero tu email.'); return; } setError(''); setResetSent(true); }}
+                            className="w-full text-sm py-2 font-medium"
+                            style={{ color: 'var(--cyan)' }}
+                        >
+                            Ya tengo un código del correo
                         </button>
 
                         <button
