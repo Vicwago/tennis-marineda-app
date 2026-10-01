@@ -20,6 +20,12 @@ export default function Register({ onNavigateToLogin }) {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [slowLoad, setSlowLoad] = useState(false);
+
+    // Enlace de invitación (/unirse?codigo=…): el código llega en la URL y se rellena solo
+    useEffect(() => {
+        const c = (new URLSearchParams(window.location.search).get('codigo') || '').trim().toUpperCase();
+        if (c) setForm(f => ({ ...f, inviteCode: c }));
+    }, []);
     const [success, setSuccess] = useState(false);
     const [needsConfirmation, setNeedsConfirmation] = useState(false);
 

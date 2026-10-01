@@ -11,6 +11,7 @@ import logoUrl from './assets/logo.png';
 const Register = lazy(() => import('./components/Register'));
 const NewsFeed = lazy(() => import('./components/News/NewsFeed'));
 const ResetPassword = lazy(() => import('./components/ResetPassword'));
+const Unirse = lazy(() => import('./components/Unirse'));
 
 // ─── Theme management ───────────────────────────────────────────
 const getInitialTheme = () => {
@@ -55,7 +56,8 @@ const AppContent = () => {
 
   const navigate = (path) => {
     window.history.pushState({}, '', path);
-    setCurrentPath(path);
+    // Solo la ruta: "/register?codigo=X" debe seguir resolviendo a /register
+    setCurrentPath(new URL(path, window.location.origin).pathname);
   };
 
   // Handle browser back/forward buttons
@@ -75,6 +77,15 @@ const AppContent = () => {
     return (
       <Suspense fallback={<SplashScreen />}>
         <ResetPassword onDone={() => navigate('/')} />
+      </Suspense>
+    );
+  }
+
+  // Route: enlace de invitación (público): crear cuenta + cómo instalar la app
+  if (currentPath === '/unirse') {
+    return (
+      <Suspense fallback={<SplashScreen />}>
+        <Unirse onNavigate={navigate} isAuthenticated={isAuthenticated} />
       </Suspense>
     );
   }

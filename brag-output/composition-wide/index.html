@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Escuela de Tenis Marineda — Brag</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="assets/audio-bass.js"></script>
+    <style>
+      :root {
+        --cyan: #00d4ff;
+        --green: #00ff87;
+        --red-a: #e53935;
+        --red-b: #b71c1c;
+        --yellow: #fdd835;
+        --ink: #ffffff;
+        --mute: rgba(255, 255, 255, 0.6);
+        --panel: rgba(9, 20, 38, 0.72);
+        --border: rgba(0, 212, 255, 0.22);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #03060f;
+        color: var(--ink);
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      /* ---- Shared background (NOT a clip) ---- */
+      #bg {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, #060d1a 0%, #03060f 100%);
+      }
+      #bgGrid {
+        position: absolute;
+        inset: -2px;
+        background-image: linear-gradient(rgba(0, 212, 255, 0.12) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 212, 255, 0.12) 1px, transparent 1px);
+        background-size: 72px 72px;
+        opacity: 0.55;
+      }
+      #bgGlow {
+        position: absolute;
+        left: 50%;
+        top: 42%;
+        width: 1400px;
+        height: 1400px;
+        margin-left: -700px;
+        margin-top: -700px;
+        background: radial-gradient(
+          circle,
+          rgba(0, 212, 255, 0.22) 0%,
+          rgba(0, 212, 255, 0.07) 38%,
+          transparent 66%
+        );
+        opacity: 0.16;
+        will-change: transform, opacity;
+      }
+      #bgVignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 50% 44%, transparent 46%, rgba(0, 0, 0, 0.62) 100%);
+      }
+      /* ---- Scenes ---- */
+      .scene {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 50px 140px;
+        background: transparent;
+      }
+      .mono {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+      }
+      .kicker {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-weight: 500;
+        letter-spacing: 0.42em;
+        text-transform: uppercase;
+        font-size: 26px;
+        color: var(--cyan);
+      }
+      /* Scene 1 hook */
+      #hookTitle {
+        font-weight: 800;
+        font-size: 132px;
+        line-height: 1.02;
+        text-align: center;
+        letter-spacing: -0.02em;
+        margin: 0;
+        text-shadow: 0 0 42px rgba(0, 212, 255, 0.35);
+      }
+      #hookTitle .cyan {
+        color: var(--cyan);
+        text-shadow: 0 0 54px rgba(0, 212, 255, 0.7);
+      }
+      #hookSub {
+        margin-top: 54px;
+      }
+      #scanline {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 5px;
+        background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.9), transparent);
+        box-shadow: 0 0 26px 4px rgba(0, 212, 255, 0.5);
+        opacity: 0;
+      }
+      /* Glass card generic */
+      .glass {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        box-shadow: 0 0 34px rgba(0, 212, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(2px);
+      }
+      .btn-red {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: linear-gradient(135deg, var(--red-a), var(--red-b));
+        color: #fff;
+        font-weight: 800;
+        font-size: 40px;
+        letter-spacing: 0.01em;
+        padding: 30px 56px;
+        border-radius: 22px;
+        box-shadow: 0 14px 40px rgba(229, 57, 53, 0.42);
+      }
+      .caption {
+        font-weight: 700;
+        font-size: 44px;
+        text-align: center;
+        color: var(--ink);
+        margin: 0;
+      }
+      .label-mono {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-weight: 500;
+        font-size: 30px;
+        color: var(--mute);
+        text-align: center;
+      }
+      /* Scene 2 */
+      .bubble {
+        position: absolute;
+        font-weight: 700;
+        font-size: 40px;
+        color: #eaf6ff;
+        background: rgba(0, 212, 255, 0.1);
+        border: 1px solid rgba(0, 212, 255, 0.28);
+        padding: 22px 34px;
+        border-radius: 26px 26px 26px 6px;
+      }
+      #loginCard {
+        width: 720px;
+        padding: 56px 56px 60px;
+        text-align: center;
+      }
+      #loginCard .welcome {
+        font-weight: 800;
+        font-size: 46px;
+        margin: 0 0 10px;
+      }
+      #loginCard .club {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-weight: 500;
+        font-size: 28px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--cyan);
+        margin: 0 0 44px;
+      }
+      /* Scene 3 */
+      #jornadaWrap {
+        width: 1120px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+      }
+      #matchList {
+        position: relative;
+        width: 1120px;
+        height: 430px;
+        margin-top: 44px;
+      }
+      .match-card {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 118px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 40px;
+        border-radius: 22px;
+        opacity: 0;
+      }
+      .match-card .players {
+        font-weight: 800;
+        font-size: 40px;
+      }
+      .match-card .meta {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-weight: 700;
+        font-size: 32px;
+        color: var(--cyan);
+        text-align: right;
+      }
+      #mc1 {
+        top: 0;
+      }
+      #mc2 {
+        top: 156px;
+      }
+      #mc3 {
+        top: 312px;
+      }
+      #cursor {
+        position: absolute;
+        width: 54px;
+        height: 54px;
+        left: 0;
+        top: 0;
+        z-index: 40;
+        opacity: 0;
+        filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+      }
+      /* Scene NOTIF (phone) */
+      #phone {
+        position: relative;
+        width: 620px;
+        height: 680px;
+        border-radius: 54px;
+        border: 3px solid rgba(0, 212, 255, 0.35);
+        background: linear-gradient(180deg, #0a1730 0%, #050c1c 100%);
+        box-shadow: 0 0 60px rgba(0, 212, 255, 0.22), inset 0 2px 0 rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+      }
+      #phoneNotch {
+        position: absolute;
+        left: 50%;
+        top: 22px;
+        transform: translateX(-50%);
+        width: 190px;
+        height: 34px;
+        border-radius: 20px;
+        background: #03060f;
+      }
+      #phoneBar {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 90px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 44px;
+      }
+      #phoneBar .appname {
+        font-weight: 800;
+        font-size: 34px;
+      }
+      #phoneBar .appname .c {
+        color: var(--cyan);
+      }
+      #bellWrap {
+        position: relative;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: rgba(0, 212, 255, 0.1);
+        border: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #bellWrap svg {
+        width: 32px;
+        height: 32px;
+      }
+      #bellBadge {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        min-width: 32px;
+        height: 32px;
+        padding: 0 8px;
+        border-radius: 16px;
+        background: var(--red-a);
+        color: #fff;
+        font-weight: 800;
+        font-size: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(229, 57, 53, 0.5);
+      }
+      /* app content faint behind */
+      #phoneBody {
+        position: absolute;
+        left: 32px;
+        right: 32px;
+        top: 246px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        opacity: 0.34;
+      }
+      .ghost-row {
+        height: 92px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      /* the push notification */
+      #notifWrap {
+        position: absolute;
+        left: 26px;
+        right: 26px;
+        top: 168px;
+        z-index: 20;
+      }
+      #notifCard {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+        padding: 28px 28px 30px;
+        border-radius: 26px;
+        background: rgba(10, 24, 44, 0.96);
+        border: 1px solid rgba(0, 212, 255, 0.4);
+        border-left: 6px solid var(--cyan);
+        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), 0 0 34px rgba(0, 212, 255, 0.22);
+      }
+      #notifCard .nicon {
+        flex: 0 0 auto;
+        width: 64px;
+        height: 64px;
+        border-radius: 16px;
+        background: rgba(0, 212, 255, 0.14);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 34px;
+      }
+      #notifCard .ntext {
+        flex: 1;
+        min-width: 0;
+      }
+      #notifCard .nhead {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      #notifCard .ntitle {
+        font-weight: 800;
+        font-size: 34px;
+      }
+      #notifCard .ntime {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 22px;
+        color: var(--mute);
+        white-space: nowrap;
+      }
+      #notifCard .nbody {
+        font-size: 31px;
+        line-height: 1.3;
+        color: #dcecfb;
+      }
+      #notifCard .nbody b {
+        color: #fff;
+        font-weight: 800;
+      }
+      #notifCard .nmeta {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        color: var(--cyan);
+        font-weight: 700;
+      }
+      /* Scene 5 ranking */
+      #rankCard {
+        width: 1240px;
+        padding: 26px 0 16px;
+        overflow: hidden;
+      }
+      #rankHead {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 6px 40px 26px;
+        border-bottom: 1px solid var(--border);
+      }
+      #rankHead .t {
+        font-weight: 800;
+        font-size: 40px;
+      }
+      #rankHead .sub {
+        margin-left: auto;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 24px;
+        color: var(--mute);
+      }
+      .rank-cols {
+        display: flex;
+        align-items: center;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 22px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--mute);
+        padding: 20px 40px 8px;
+      }
+      #rankRows {
+        position: relative;
+        height: 520px;
+        margin-top: 6px;
+      }
+      .rrow {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        height: 96px;
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        border-radius: 18px;
+        will-change: transform;
+      }
+      .rrow .pos {
+        width: 66px;
+        display: flex;
+        justify-content: center;
+      }
+      .rrow .badge-num {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 26px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #dfeefc;
+      }
+      .rrow.p1 .badge-num {
+        background: var(--yellow);
+        color: #1a1a1e;
+      }
+      .rrow.p2 .badge-num {
+        background: #7b8794;
+        color: #fff;
+      }
+      .rrow.p3 .badge-num {
+        background: #a1652b;
+        color: #fff;
+      }
+      .rrow .who {
+        flex: 1;
+        font-weight: 700;
+        font-size: 38px;
+        padding-left: 8px;
+      }
+      .rrow .sit {
+        width: 300px;
+        display: flex;
+        justify-content: center;
+        position: relative;
+      }
+      .pill {
+        position: absolute;
+        white-space: nowrap;
+        font-weight: 700;
+        font-size: 22px;
+        padding: 8px 16px;
+        border-radius: 999px;
+      }
+      .pill-up {
+        color: var(--green);
+        background: rgba(0, 255, 135, 0.12);
+        border: 1px solid rgba(0, 255, 135, 0.32);
+      }
+      .pill-keep {
+        color: var(--mute);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border);
+      }
+      .rrow .pj {
+        width: 96px;
+        text-align: center;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 30px;
+        color: rgba(255, 255, 255, 0.75);
+      }
+      .rrow .pts {
+        width: 130px;
+        text-align: right;
+        font-weight: 800;
+        font-size: 40px;
+        color: var(--cyan);
+        padding-right: 6px;
+      }
+      .rrow.upgrade {
+        background: rgba(0, 255, 135, 0.09);
+        border: 1px solid rgba(0, 255, 135, 0.3);
+        box-shadow: 0 0 30px rgba(0, 255, 135, 0.18);
+      }
+      #plus4 {
+        position: absolute;
+        right: 150px;
+        font-weight: 800;
+        font-size: 42px;
+        color: var(--green);
+        opacity: 0;
+        z-index: 30;
+      }
+      /* Scene 6 outro */
+      #outroName {
+        font-weight: 800;
+        font-size: 92px;
+        text-align: center;
+        line-height: 1.05;
+        margin: 0;
+        text-shadow: 0 0 48px rgba(0, 212, 255, 0.4);
+      }
+      #outroName .cyan {
+        color: var(--cyan);
+      }
+      #outroTag {
+        font-weight: 700;
+        font-size: 56px;
+        text-align: center;
+        margin: 46px 0 0;
+      }
+      #outroSig {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-weight: 500;
+        font-size: 34px;
+        letter-spacing: 0.12em;
+        color: var(--cyan);
+        margin-top: 60px;
+      }
+      .glow-ring {
+        position: absolute;
+        left: 50%;
+        top: 46%;
+        width: 900px;
+        height: 900px;
+        margin-left: -450px;
+        margin-top: -450px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(0, 212, 255, 0.16), transparent 62%);
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main_wide"
+      data-width="1920"
+      data-height="1080"
+      data-duration="30"
+      data-fps="30"
+    >
+      <!-- ================= Shared background ================= -->
+      <div id="bg">
+        <div id="bgGrid"></div>
+        <div id="bgGlow"></div>
+        <div id="bgVignette"></div>
+      </div>
+      <div id="scanline"></div>
+
+      <!-- ================= Scene 1 — Hook (0–3.5) ================= -->
+      <section id="s1" class="scene clip" data-start="0" data-duration="3.5" data-track-index="1">
+        <h1 id="hookTitle">El ranking de<br />tu club, <span class="cyan">vivo.</span></h1>
+        <div id="hookSub" class="kicker">Escuela de Tenis Marineda</div>
+      </section>
+
+      <!-- ================= Scene 2 — El lío → la app (3.5–8.0) ================= -->
+      <section id="s2" class="scene clip" data-start="3.5" data-duration="4.5" data-track-index="1">
+        <div id="s2bubbles" style="position: absolute; inset: 0;">
+          <div id="b1" class="bubble" style="left: 560px; top: 300px;">¿a qué hora?</div>
+          <div id="b2" class="bubble" style="right: 560px; top: 470px;">¿con quién?</div>
+          <div id="b3" class="bubble" style="left: 680px; top: 640px;">¿qué pista?</div>
+        </div>
+        <div id="loginCard" class="glass">
+          <p class="welcome">Bienvenido</p>
+          <p class="club">Escuela de Tenis Marineda</p>
+          <div class="btn-red">Entrar</div>
+        </div>
+        <p id="s2cap" class="caption" style="margin-top: 64px;">
+          Cada semana, el mismo lío.<br />Hasta ahora.
+        </p>
+      </section>
+
+      <!-- ================= Scene 3 — Generar Jornada (8.0–14.0) ================= -->
+      <section id="s3" class="scene clip" data-start="8" data-duration="6" data-track-index="1">
+        <div id="jornadaWrap">
+          <div class="kicker" style="margin-bottom: 34px;">Jornada</div>
+          <div id="genBtn" class="btn-red">Generar Jornada</div>
+        </div>
+        <div id="matchList">
+          <div id="mc1" class="match-card glass">
+            <span class="players">Álvaro C. <span style="color: var(--mute)">vs</span> Diego S.</span>
+            <span class="meta">Pista 1 · 18:00</span>
+          </div>
+          <div id="mc2" class="match-card glass">
+            <span class="players">Marta R. <span style="color: var(--mute)">vs</span> Lucía P.</span>
+            <span class="meta">Pista 3 · 19:30</span>
+          </div>
+          <div id="mc3" class="match-card glass">
+            <span class="players">Iván M. <span style="color: var(--mute)">vs</span> Nerea G.</span>
+            <span class="meta">Pista 2 · 19:00</span>
+          </div>
+          <svg id="cursor" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M4 2l14 8-6 1.5L15 18l-3 1.3-3-6.3L4 16V2z"
+              fill="#fff"
+              stroke="#03060f"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </div>
+        <p id="s3label" class="label-mono" style="margin-top: 52px;">
+          Rival, pista y hora. Sin repetir.
+        </p>
+      </section>
+
+      <!-- ================= Scene 4 — La notificación al jugador (14.0–19.5) ================= -->
+      <section id="s4n" class="scene clip" data-start="14" data-duration="5.5" data-track-index="1">
+        <div class="kicker" style="margin-bottom: 42px;">Aviso a cada jugador</div>
+        <div id="phone">
+          <div id="phoneNotch"></div>
+          <div id="phoneBar">
+            <span class="appname">Marineda<span class="c">·</span></span>
+            <span id="bellWrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+              </svg>
+              <span id="bellBadge">1</span>
+            </span>
+          </div>
+          <div id="phoneBody">
+            <div class="ghost-row"></div>
+            <div class="ghost-row"></div>
+            <div class="ghost-row"></div>
+            <div class="ghost-row"></div>
+          </div>
+          <div id="notifWrap">
+            <div id="notifCard">
+              <span class="nicon">🎾</span>
+              <span class="ntext">
+                <span class="nhead">
+                  <span class="ntitle">Nueva jornada</span>
+                  <span class="ntime">ahora mismo</span>
+                </span>
+                <span class="nbody">
+                  Juegas vs <b>Diego S.</b> ·
+                  <span class="nmeta">Pista 2 · Sábado 19:30</span>
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <p id="s4nlabel" class="caption" style="margin-top: 56px; font-size: 40px;">
+          Y cada jugador recibe el suyo.<br />Sin preguntar a nadie.
+        </p>
+      </section>
+
+      <!-- ================= Scene 5 — El ranking sube (19.5–26.0) ================= -->
+      <section id="s4" class="scene clip" data-start="19.5" data-duration="6.5" data-track-index="1">
+        <div id="rankCard" class="glass">
+          <div id="rankHead">
+            <span style="color: var(--yellow); font-size: 30px;">🏆</span>
+            <span class="t">Clasificación</span>
+            <span class="sub">Top 3 ascienden</span>
+          </div>
+          <div class="rank-cols">
+            <span style="width: 66px; text-align: center;">Pos</span>
+            <span style="flex: 1; padding-left: 8px;">Pareja / Jugador</span>
+            <span style="width: 300px; text-align: center;">Situación</span>
+            <span style="width: 96px; text-align: center;">PJ</span>
+            <span style="width: 130px; text-align: right;">Puntos</span>
+          </div>
+          <div id="rankRows">
+            <div id="r1" class="rrow p1" style="top: 0;">
+              <span class="pos"><span class="badge-num">1</span></span>
+              <span class="who">Álvaro C.</span>
+              <span class="sit"><span class="pill pill-up">⬆ Asciende de división</span></span>
+              <span class="pj">7</span>
+              <span class="pts">41</span>
+            </div>
+            <div id="r2" class="rrow p2" style="top: 104px;">
+              <span class="pos"><span class="badge-num">2</span></span>
+              <span class="who">Marta R.</span>
+              <span class="sit"><span class="pill pill-up">⬆ Asciende de división</span></span>
+              <span class="pj">7</span>
+              <span class="pts">36</span>
+            </div>
+            <div id="rDiego" class="rrow p3" style="top: 208px;">
+              <span class="pos"><span id="diegoNum" class="badge-num">3</span></span>
+              <span class="who">Diego S.</span>
+              <span class="sit">
+                <span id="diegoUp" class="pill pill-up">⬆ Asciende de división</span>
+                <span id="diegoKeep" class="pill pill-keep" style="opacity: 0;">— Mantiene posición</span>
+              </span>
+              <span class="pj">6</span>
+              <span class="pts">30</span>
+            </div>
+            <div id="rLucia" class="rrow" style="top: 312px;">
+              <span class="pos"><span id="luciaNum" class="badge-num">4</span></span>
+              <span class="who">Lucía P.</span>
+              <span class="sit">
+                <span id="luciaKeep" class="pill pill-keep">— Mantiene posición</span>
+                <span id="luciaUp" class="pill pill-up" style="opacity: 0;">⬆ Asciende de división</span>
+              </span>
+              <span class="pj">6</span>
+              <span id="luciaPts" class="pts">28</span>
+            </div>
+            <div id="r5" class="rrow" style="top: 416px;">
+              <span class="pos"><span class="badge-num">5</span></span>
+              <span class="who">Nerea G.</span>
+              <span class="sit"><span class="pill pill-keep">— Mantiene posición</span></span>
+              <span class="pj">6</span>
+              <span class="pts">24</span>
+            </div>
+            <div id="plus4" class="mono">+4</div>
+          </div>
+        </div>
+        <p id="s4label" class="label-mono" style="margin-top: 48px; color: var(--green);">
+          Resultados en directo.
+        </p>
+      </section>
+
+      <!-- ================= Scene 6 — Outro (26.0–30.0) ================= -->
+      <section id="s5" class="scene clip" data-start="26" data-duration="4" data-track-index="1">
+        <div id="outroRing" class="glow-ring"></div>
+        <h2 id="outroName">Escuela de Tenis<br /><span class="cyan">Marineda</span></h2>
+        <p id="outroTag">Su club. Su ranking. Su app.</p>
+        <div id="outroSig" class="mono">NorteIA · victormago.com</div>
+      </section>
+
+      <!-- ================= Audio (direct children of root) ================= -->
+      <audio
+        id="bgm"
+        src="assets/music/happy-beats-business-moves-vol-1-by-ende-dot-app.mp3"
+        data-start="0"
+        data-duration="30"
+        data-track-index="20"
+        data-volume="0.85"
+      ></audio>
+      <!-- SFX -->
+      <audio id="sfxHook" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="0.3" data-duration="0.5" data-track-index="21" data-volume="0.8"></audio>
+      <audio id="sfxAppIn" src="assets/sfx/casino/card-slide-1.ogg" data-start="6.0" data-duration="0.5" data-track-index="21" data-volume="0.6"></audio>
+      <audio id="sfxClick" src="assets/sfx/interface/click_003.ogg" data-start="9.02" data-duration="0.3" data-track-index="21" data-volume="0.85"></audio>
+      <audio id="sfxCard1" src="assets/sfx/casino/card-slide-1.ogg" data-start="10.02" data-duration="0.5" data-track-index="22" data-volume="0.6"></audio>
+      <audio id="sfxCard2" src="assets/sfx/casino/card-slide-1.ogg" data-start="11.02" data-duration="0.5" data-track-index="22" data-volume="0.6"></audio>
+      <audio id="sfxCard3" src="assets/sfx/casino/card-slide-1.ogg" data-start="12.02" data-duration="0.5" data-track-index="22" data-volume="0.6"></audio>
+      <audio id="sfxSet" src="assets/sfx/interface/bong_001.ogg" data-start="12.35" data-duration="0.4" data-track-index="21" data-volume="0.55"></audio>
+      <audio id="sfxBadge" src="assets/sfx/interface/click_002.ogg" data-start="15.05" data-duration="0.2" data-track-index="23" data-volume="0.5"></audio>
+      <audio id="sfxNotif" src="assets/sfx/interface/bong_001.ogg" data-start="16.02" data-duration="0.4" data-track-index="21" data-volume="0.75"></audio>
+      <audio id="sfxTick1" src="assets/sfx/interface/click_002.ogg" data-start="20.60" data-duration="0.2" data-track-index="23" data-volume="0.5"></audio>
+      <audio id="sfxTick2" src="assets/sfx/interface/click_002.ogg" data-start="20.95" data-duration="0.2" data-track-index="23" data-volume="0.5"></audio>
+      <audio id="sfxTick3" src="assets/sfx/interface/click_002.ogg" data-start="21.30" data-duration="0.2" data-track-index="23" data-volume="0.5"></audio>
+      <audio id="sfxTick4" src="assets/sfx/interface/click_002.ogg" data-start="21.65" data-duration="0.2" data-track-index="23" data-volume="0.5"></audio>
+      <audio id="sfxUp" src="assets/sfx/impact/impactBell_heavy_003.ogg" data-start="22.01" data-duration="0.6" data-track-index="21" data-volume="0.72"></audio>
+      <audio id="sfxLogo" src="assets/sfx/impact/impactSoft_medium_004.ogg" data-start="26.02" data-duration="0.5" data-track-index="21" data-volume="0.85"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      /* ---------- Shared background motion ---------- */
+      tl.fromTo("#bgGrid", { y: 0 }, { y: 72, duration: 30, ease: "none" }, 0);
+      // Outro glow swell on the shared layer
+      tl.to("#bgGlow", { opacity: 0.28, duration: 1.4, ease: "sine.inOut" }, 26.0);
+
+      /* ---------- Audio-reactive: bass drives bg glow (subtle) ---------- */
+      (function () {
+        var bass = window.__BASS || [];
+        var fps = 30;
+        var glow = document.getElementById("bgGlow");
+        if (!glow || !bass.length) return;
+        for (var f = 0; f < bass.length; f += 2) {
+          (function (v, t) {
+            tl.call(
+              function () {
+                if (t > 25.8) return; // outro swell owns 26s+
+                glow.style.opacity = (0.12 + v * 0.2).toFixed(3);
+                glow.style.transform = "scale(" + (1 + v * 0.06).toFixed(3) + ")";
+              },
+              null,
+              t
+            );
+          })(bass[f], f / fps);
+        }
+      })();
+
+      /* ---------- Music volume arc (duck under demo, swell in outro) ---------- */
+      tl.to("#bgm", { volume: 0.5, duration: 1.0, ease: "sine.inOut" }, 8.0);
+      tl.to("#bgm", { volume: 0.58, duration: 0.8, ease: "sine.inOut" }, 14.2);
+      tl.to("#bgm", { volume: 0.5, duration: 0.8, ease: "sine.inOut" }, 19.5);
+      tl.to("#bgm", { volume: 0.8, duration: 1.0, ease: "sine.inOut" }, 26.0);
+      tl.to("#bgm", { volume: 0.0, duration: 1.6, ease: "sine.in" }, 28.2);
+
+      /* ================= Scene 1 — Hook (0–3.5) ================= */
+      tl.from("#hookTitle", { scale: 1.12, opacity: 0, y: 24, duration: 0.5, ease: "power3.out" }, 0.3); // beat: hook slam
+      tl.from("#hookSub", { opacity: 0, y: 22, duration: 0.5, ease: "power2.out" }, 0.7);
+      tl.fromTo("#scanline", { y: -20, opacity: 0 }, { y: 1940, opacity: 1, duration: 2.6, ease: "none" }, 0.5);
+      tl.to("#scanline", { opacity: 0, duration: 0.2 }, 3.15);
+      tl.to("#s1", { opacity: 0, duration: 0.4, ease: "power1.in" }, 3.15);
+
+      /* ================= Scene 2 — El lío → la app (3.5–8.0) ================= */
+      tl.set("#loginCard", { opacity: 0 }, 3.5);
+      tl.set("#s2cap", { opacity: 0 }, 3.5);
+      tl.from("#b1", { opacity: 0, y: 18, scale: 0.9, duration: 0.3, ease: "back.out(2)" }, 3.8);
+      tl.from("#b2", { opacity: 0, y: 18, scale: 0.9, duration: 0.3, ease: "back.out(2)" }, 4.3);
+      tl.from("#b3", { opacity: 0, y: 18, scale: 0.9, duration: 0.3, ease: "back.out(2)" }, 4.8);
+      tl.to("#s2bubbles", { opacity: 0, duration: 0.5, ease: "power2.in" }, 5.6);
+      tl.fromTo("#loginCard", { opacity: 0, y: 60, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "power3.out" }, 6.0);
+      tl.fromTo("#s2cap", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 6.5);
+      tl.to("#s2", { opacity: 0, duration: 0.4, ease: "power1.in" }, 7.65);
+
+      /* ================= Scene 3 — Generar Jornada (8.0–14.0) ================= */
+      tl.from("#jornadaWrap .kicker", { opacity: 0, y: 20, duration: 0.4 }, 8.2);
+      tl.from("#genBtn", { opacity: 0, y: 30, scale: 0.94, duration: 0.5, ease: "power3.out" }, 8.35);
+      tl.from("#s3label", { opacity: 0, duration: 0.5 }, 8.6);
+      tl.fromTo("#cursor", { opacity: 0, x: 640, y: 300 }, { opacity: 1, x: 470, y: -150, duration: 0.9, ease: "power2.inOut" }, 8.0);
+      // click press at 9.02 (beat-locked action)
+      tl.to("#genBtn", { scale: 0.92, duration: 0.09, ease: "power2.in" }, 9.02); // beat-locked
+      tl.to("#genBtn", { scale: 1, duration: 0.22, ease: "back.out(3)" }, 9.11);
+      tl.to("#cursor", { scale: 0.82, duration: 0.09 }, 9.02);
+      tl.to("#cursor", { scale: 1, duration: 0.18 }, 9.11);
+      tl.to("#cursor", { opacity: 0, duration: 0.35 }, 9.5);
+      // three match cards enter on alternate beats (~1s apart)
+      tl.fromTo("#mc1", { opacity: 0, x: 90, y: 10 }, { opacity: 1, x: 0, y: 0, duration: 0.5, ease: "power3.out" }, 10.02); // beat-grid
+      tl.fromTo("#mc2", { opacity: 0, x: 90, y: 10 }, { opacity: 1, x: 0, y: 0, duration: 0.5, ease: "power3.out" }, 11.02); // beat-grid
+      tl.fromTo("#mc3", { opacity: 0, x: 90, y: 10 }, { opacity: 1, x: 0, y: 0, duration: 0.5, ease: "power3.out" }, 12.02); // beat-grid
+      // full set holds ~1.5s (12.5–14) for reading
+      tl.to("#s3", { opacity: 0, duration: 0.4, ease: "power1.in" }, 13.7);
+
+      /* ================= Scene 4 — La notificación (14.0–19.5) ================= */
+      tl.from("#s4n .kicker", { opacity: 0, y: 18, duration: 0.45 }, 14.25);
+      tl.from("#phone", { opacity: 0, y: 60, scale: 0.95, duration: 0.6, ease: "power3.out" }, 14.35);
+      tl.set("#notifWrap", { y: -260, opacity: 0 }, 14.0);
+      tl.set("#bellBadge", { scale: 0 }, 14.0);
+      // badge pops on the bell
+      tl.fromTo("#bellBadge", { scale: 0 }, { scale: 1, duration: 0.35, ease: "back.out(3)" }, 15.05);
+      // push notification slides from top — beat-locked to strong cue 16.02
+      tl.to("#notifWrap", { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, 16.02); // beat-locked
+      tl.from("#s4nlabel", { opacity: 0, y: 22, duration: 0.5, ease: "power2.out" }, 16.6);
+      // gentle glow settle of the card
+      tl.fromTo("#notifCard", { boxShadow: "0 22px 60px rgba(0,0,0,0.55), 0 0 10px rgba(0,212,255,0.1)" }, { boxShadow: "0 22px 60px rgba(0,0,0,0.55), 0 0 34px rgba(0,212,255,0.28)", duration: 0.6 }, 16.1);
+      tl.to("#s4n", { opacity: 0, duration: 0.4, ease: "power1.in" }, 19.2);
+
+      /* ================= Scene 5 — El ranking sube (19.5–26.0) ================= */
+      tl.from("#rankCard", { opacity: 0, y: 50, scale: 0.96, duration: 0.55, ease: "power3.out" }, 19.65);
+      tl.from("#s4label", { opacity: 0, duration: 0.5 }, 20.1);
+      // count-up +4 on Lucía (28 -> 32)
+      var luPts = { v: 28 };
+      var luEl = document.getElementById("luciaPts");
+      tl.to(
+        luPts,
+        {
+          v: 32,
+          duration: 1.1,
+          ease: "power1.inOut",
+          onUpdate: function () {
+            if (luEl) luEl.textContent = Math.round(luPts.v);
+          },
+        },
+        20.55
+      );
+      tl.fromTo("#plus4", { opacity: 0, y: 10 }, { opacity: 1, y: -6, duration: 0.3, ease: "power2.out" }, 20.6);
+      tl.to("#plus4", { opacity: 0, y: -34, duration: 0.5, ease: "power1.in" }, 21.7);
+      // the swap — beat-locked jump at 22.01 (strong cue)
+      tl.to("#rLucia", { y: -104, duration: 0.55, ease: "power3.inOut" }, 22.01); // beat-locked
+      tl.to("#rDiego", { y: 104, duration: 0.55, ease: "power3.inOut" }, 22.01);
+      tl.to("#rLucia", { backgroundColor: "rgba(0,255,135,0.09)", duration: 0.4 }, 22.05);
+      tl.to("#luciaKeep", { opacity: 0, duration: 0.3 }, 22.1);
+      tl.to("#luciaUp", { opacity: 1, duration: 0.3 }, 22.2);
+      tl.to("#diegoUp", { opacity: 0, duration: 0.3 }, 22.1);
+      tl.to("#diegoKeep", { opacity: 1, duration: 0.3 }, 22.2);
+      tl.to("#luciaNum", { backgroundColor: "#a1652b", color: "#ffffff", duration: 0.3 }, 22.1);
+      tl.to("#diegoNum", { backgroundColor: "rgba(255,255,255,0.08)", color: "#dfeefc", duration: 0.3 }, 22.1);
+      // swap the position numbers at the jump (Lucía 4->3, Diego 3->4); reset before for backward-seek safety
+      var luciaNumEl = document.getElementById("luciaNum");
+      var diegoNumEl = document.getElementById("diegoNum");
+      tl.call(function () { if (luciaNumEl) luciaNumEl.textContent = "4"; if (diegoNumEl) diegoNumEl.textContent = "3"; }, null, 21.9);
+      tl.call(function () { if (luciaNumEl) luciaNumEl.textContent = "3"; if (diegoNumEl) diegoNumEl.textContent = "4"; }, null, 22.32);
+      tl.fromTo("#rLucia", { boxShadow: "0 0 0 rgba(0,255,135,0)" }, { boxShadow: "0 0 30px rgba(0,255,135,0.22)", duration: 0.5 }, 22.1);
+      tl.to("#s4", { opacity: 0, duration: 0.4, ease: "power1.in" }, 25.65);
+
+      /* ================= Scene 6 — Outro (26.0–30.0) ================= */
+      tl.fromTo("#outroName", { opacity: 0, scale: 1.14, y: 18 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: "power3.out" }, 26.02); // beat-locked
+      tl.fromTo("#outroRing", { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power2.out" }, 26.02);
+      tl.from("#outroTag", { opacity: 0, y: 22, duration: 0.5, ease: "power2.out" }, 26.5);
+      tl.from("#outroSig", { opacity: 0, y: 18, duration: 0.5, ease: "power2.out" }, 26.9);
+      tl.to("#outroRing", { opacity: 0.35, scale: 1.08, duration: 1.4, ease: "sine.inOut" }, 27.6);
+      tl.to(["#outroName", "#outroTag", "#outroSig"], { opacity: 0, duration: 0.7, ease: "power1.in" }, 29.1);
+      tl.to("#outroRing", { opacity: 0, duration: 0.7, ease: "power1.in" }, 29.2);
+
+      window.__timelines["main_wide"] = tl;
+    </script>
+  </body>
+</html>
