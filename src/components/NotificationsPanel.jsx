@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Bell, Check, CheckCheck, Calendar, Trophy, MessageSquare, X, BellOff } from 'lucide-react';
+import { Bell, Check, CheckCheck, Calendar, Trophy, MessageSquare, X, BellOff, Users } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
 
 const timeAgo = (dateStr) => {
@@ -17,7 +17,10 @@ const timeAgo = (dateStr) => {
     return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 };
 
+const isPairType = (type) => String(type || '').startsWith('pair');
+
 const typeIcon = (type) => {
+    if (isPairType(type)) return <Users size={14} />;
     switch (type) {
         case 'match_assigned': return <Calendar size={14} />;
         case 'match_updated': return <Calendar size={14} />;
@@ -30,6 +33,7 @@ const typeIcon = (type) => {
 };
 
 const typeColor = (type) => {
+    if (isPairType(type)) return '#00d4ff';
     switch (type) {
         case 'match_assigned': return 'var(--cyan)';
         case 'match_updated': return '#FFC107';
@@ -41,7 +45,7 @@ const typeColor = (type) => {
     }
 };
 
-export default function NotificationsPanel({ onClose }) {
+export default function NotificationsPanel({ onClose, onOpenPair }) {
     const { notifications, unreadCount, markAsRead, markAllRead, loading } = useNotifications();
     const panelRef = useRef(null);
 
@@ -109,7 +113,7 @@ export default function NotificationsPanel({ onClose }) {
                     notifications.map(notif => (
                         <div
                             key={notif.id}
-                            onClick={() => !notif.is_read && markAsRead(notif.id)}
+                            onClick={() => { if (!notif.is_read) markAsRead(notif.id); if (isPairType(notif.type) && onOpenPair) { onOpenPair(); onClose(); } }}
                             className="flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors"
                             style={{
                                 borderBottom: '1px solid var(--border)',

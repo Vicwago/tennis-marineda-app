@@ -37,6 +37,7 @@ export default function Register({ onNavigateToLogin }) {
     }, [isLoading]);
 
     const isTennis = form.sport === 'tennis';
+    const norm = (txt) => (txt || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
     const handleChange = (field, value) => {
         setForm(prev => ({ ...prev, [field]: value }));
@@ -49,7 +50,12 @@ export default function Register({ onNavigateToLogin }) {
         if (!form.email.trim()) return 'El email es obligatorio.';
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'El email no es válido.';
         if (!form.inviteCode.trim()) return 'Introduce el código de invitación del club.';
-        if (!isTennis && form.partnerName.trim().length < 3) return 'Escribe el nombre y apellido de tu pareja de pádel.';
+        if (!isTennis) {
+            if (form.name.includes('/')) return 'Pon solo tu nombre. El de tu pareja va más abajo.';
+            const partner = form.partnerName.trim();
+            if (partner.split(/\s+/).filter(Boolean).length < 2) return 'Escribe el nombre y el apellido de tu pareja (por ejemplo: Pedro Pérez).';
+            if (norm(partner) === norm(form.name)) return 'Aquí va el nombre de tu pareja, no el tuyo.';
+        }
         if (form.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
         if (!/[a-zA-Z]/.test(form.password) || !/[0-9]/.test(form.password)) return 'La contraseña debe incluir letras y números.';
         if (form.password !== form.confirmPassword) return 'Las contraseñas no coinciden.';
@@ -83,7 +89,9 @@ export default function Register({ onNavigateToLogin }) {
             } else if (err.code === 'INVITE_CODE_INVALID' || err.message === 'INVITE_CODE_INVALID') {
                 setError('Código de invitación incorrecto. Pídeselo a la escuela.');
             } else if (err.message?.includes('already registered') || err.message?.includes('User already registered')) {
-                setError('Este email ya tiene una cuenta. Inicia sesión.');
+                setError(isTennis
+                    ? 'Este email ya tiene una cuenta. Inicia sesión.'
+                    : 'Este email ya tiene una cuenta: entra con ella. Para jugar pádel no hace falta otra: dentro de la app pulsa Pádel y crea o busca tu pareja.');
             } else {
                 setError(err.message || 'Error al crear la cuenta. Inténtalo de nuevo.');
             }
@@ -138,7 +146,7 @@ export default function Register({ onNavigateToLogin }) {
                     <p className="text-sm mb-8" style={{ color: 'var(--text-3)' }}>
                         {isTennis
                             ? 'Tu perfil y tu ficha de jugador están creados. Ya puedes acceder a la app.'
-                            : 'Tu perfil y la ficha de vuestra pareja están creados. Entra y marca en "Mi Disponibilidad" las horas a las que podéis jugar los dos.'}
+                            : 'Cuenta creada. Entra y abre Pádel > "Mi Disponibilidad": ahí verás tu pareja y vuestras horas. Si tu pareja ya estaba apuntada, le hemos pedido que confirme que eres tú.'}
                     </p>
                     <button onClick={onNavigateToLogin} className="btn-cyber w-full py-3 rounded-xl font-bold text-base">
                         Ir al Login
@@ -260,7 +268,7 @@ export default function Register({ onNavigateToLogin }) {
                         </div>
                     )}
 
-                    {/* Pareja (solo pádel): una cuenta por pareja */}
+                    {/* Pareja (solo pádel): la pareja es una, pero podéis tener cuenta los dos */}
                     {!isTennis && (
                         <div>
                             <label htmlFor="reg-partner" className="block text-xs font-bold mb-1.5 uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Tu pareja de pádel</label>
@@ -277,7 +285,7 @@ export default function Register({ onNavigateToLogin }) {
                                 />
                             </div>
                             <p className="text-xs mt-2 px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
-                                En pádel se registra <b className="text-white">solo uno de los dos</b>: quien crea la cuenta es el capitán o capitana de la pareja, marca las horas a las que podéis jugar los dos y recibe los avisos. Tu pareja no tiene que crear cuenta.
+                                Pon su nombre y apellido. <b className="text-white">Podéis tener cuenta los dos</b>: si tu pareja ya se apuntó, le llega un aviso para confirmar que eres tú y quedáis unidos; si aún no, creamos vuestra pareja y podrá unirse cuando quiera. Con que entre uno basta para marcar las horas. ¿Ya tienes cuenta de tenis? No crees otra: entra y pulsa Pádel.
                             </p>
                         </div>
                     )}

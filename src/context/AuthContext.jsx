@@ -130,7 +130,8 @@ export const AuthProvider = ({ children }) => {
                     full_name: name,
                     sport,
                     category: sport === 'tennis' ? category : null,
-                    // Pádel: una cuenta por pareja. El trigger llama a la ficha "Capitán / Compañero".
+                    // Pádel: la pareja es una ficha con hasta dos cuentas. Con este nombre el trigger crea
+                    // "Yo / Mi pareja" o, si mi pareja ya la creó, le pide que confirme que soy yo.
                     partner_name: sport === 'padel' ? partnerName.trim() : null,
                     invite_code: inviteCode.trim()
                 }

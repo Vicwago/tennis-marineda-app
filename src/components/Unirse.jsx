@@ -62,7 +62,7 @@ export default function Unirse({ onNavigate, isAuthenticated }) {
                 </div>
 
                 <p className="text-xs mb-6 px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
-                    <b className="text-white">¿Juegas pádel?</b> Crea la cuenta solo uno de los dos (el capitán o capitana) y pon el nombre de tu pareja: esa cuenta marca las horas de los dos.
+                    <b className="text-white">¿Juegas pádel?</b> Podéis crear cuenta los dos o solo uno. Al apuntarte, pon el nombre de tu pareja y la app os junta. Las horas son de la pareja: las marca cualquiera de los dos. ¿Ya tienes cuenta de tenis? No crees otra: entra y pulsa Pádel.
                 </p>
 
                 {isAuthenticated ? (

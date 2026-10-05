@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from './AuthContext';
+import { useData } from './DataContext';
 
 const NotificationContext = createContext();
 
@@ -12,6 +13,7 @@ export const useNotifications = () => {
 
 export const NotificationProvider = ({ children }) => {
     const { user } = useAuth();
+    const { reloadData, reloadPairRequests } = useData();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -63,7 +65,15 @@ export const NotificationProvider = ({ children }) => {
                     filter: `user_id=eq.${user.id}`
                 },
                 (payload) => {
-                    setNotifications(prev => [payload.new, ...prev]);
+                    const n = payload.new;
+                    // "Tu pareja ha guardado las horas": en la BD solo queda el último sin leer; aquí igual
+                    setNotifications(prev => [n, ...(n?.type === 'pair_hours' ? prev.filter(x => !(x.type === 'pair_hours' && !x.is_read)) : prev)]);
+                    // Avisos de pareja (piden unirse, me aceptan, mi pareja guarda horas...): los datos
+                    // han cambiado. A los jugadores se les recargan solos; a los monitores solo la lista
+                    // de solicitudes, para no pisarles una operación a medias (resultados, jornada).
+                    if (String(n?.type || '').startsWith('pair')) {
+                        if (user?.role === 'admin') reloadPairRequests?.(); else reloadData?.();
+                    }
                 }
             )
             .subscribe();
@@ -71,7 +81,7 @@ export const NotificationProvider = ({ children }) => {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [user?.id]);
+    }, [user?.id, user?.role, reloadData, reloadPairRequests]);
 
     const markAsRead = async (id) => {
         try {

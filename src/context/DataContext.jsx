@@ -89,6 +89,30 @@ const computePoints = (matchesData, teamId, sportName) => {
     }, 0);
 };
 
+// Cuentas vinculadas a una ficha. En pádel puede haber dos (los dos de la pareja): los
+// avisos van siempre a todas.
+const accountsOf = (t) => [t?.user_id, t?.user_id_2].filter(Boolean);
+
+// Cuentas de cada ficha leídas AHORA de la BD: quien se unió a su pareja (o se registró)
+// después de que el monitor abriera la app también recibe el aviso, y quien ya salió no.
+// Si la lectura falla, vale lo que hay en memoria.
+const freshAccountsOf = async (teamsList) => {
+    const ids = [...new Set((teamsList || []).map(t => t?.id).filter(Boolean))];
+    let byId = {};
+    if (ids.length > 0) {
+        const { data } = await supabase.from('teams').select('id, user_id, user_id_2').in('id', ids);
+        byId = Object.fromEntries((data || []).map(r => [r.id, r]));
+    }
+    return (t) => accountsOf(byId[t?.id] || t);
+};
+
+// Inserta avisos y deja constancia si la BD los rechaza (antes el error se perdía en silencio)
+const sendNotifications = async (rows) => {
+    if (!rows || rows.length === 0) return;
+    const { error } = await supabase.from('notifications').insert(rows);
+    if (error) console.warn('No se pudieron enviar los avisos:', error.message);
+};
+
 export const DataProvider = ({ children }) => {
     const { sport, tennisCategory } = useGame();
     const { user } = useAuth();
@@ -96,6 +120,23 @@ export const DataProvider = ({ children }) => {
 
     const [teams, setTeams] = useState([]);
     const [matches, setMatches] = useState([]);
+    // Pádel: solicitudes de unión a una pareja que me afectan (la mía y las que llegan a mi pareja)
+    const [pairRequests, setPairRequests] = useState([]);
+    // Recarga silenciosa de los datos (sin pantalla de carga) tras cambios de pareja
+    const [reloadTick, setReloadTick] = useState(0);
+    const silentReloadRef = useRef(false);
+    const lastLoadRef = useRef(0);
+    const reloadData = useCallback(() => { silentReloadRef.current = true; setReloadTick(n => n + 1); }, []);
+    // Solo la lista de solicitudes (para los monitores: no les recarga jugadores ni partidos)
+    const [pairTick, setPairTick] = useState(0);
+    const reloadPairRequests = useCallback(() => setPairTick(n => n + 1), []);
+    // ¿De qué ámbito (deporte | categoría | cuenta) son los datos cargados? Mientras no coincida
+    // con lo que hay abierto, las pantallas que ESCRIBEN (Mi Disponibilidad) esperan: así nunca
+    // se trabaja sobre la ficha de otro deporte mientras llega la carga.
+    const [loadedKey, setLoadedKey] = useState('');
+    const [loadFailed, setLoadFailed] = useState(false);
+    const scopeKey = (sport && user?.id) ? `${sport}|${sport === 'tennis' ? tennisCategory : ''}|${user.id}` : '';
+    const dataReady = !!scopeKey && loadedKey === scopeKey;
     const [courts, setCourts] = useState({});
     // Metadatos por pista: { [slot_id]: { expires_at } } — expires_at ≠ null = "horario especial
     // solo esta semana" (caduca solo el lunes siguiente).
@@ -167,13 +208,21 @@ export const DataProvider = ({ children }) => {
     }, [sport, tennisCategory]);
 
     useEffect(() => {
-        if (!sport) {
+        if (!sport || !user?.id) {
+            silentReloadRef.current = false;   // una recarga pedida sin deporte abierto no deja "muda" la siguiente carga
             setLoading(false);
             return;
         }
 
+        // Solo aplica su resultado la última carga lanzada: una respuesta lenta de otro deporte
+        // (o de una recarga anterior) ya no puede pisar los datos de lo que hay abierto ahora.
+        let cancelled = false;
+        const myKey = `${sport}|${sport === 'tennis' ? tennisCategory : ''}|${user.id}`;
         const fetchData = async () => {
-            setLoading(true);
+            const silent = silentReloadRef.current;
+            silentReloadRef.current = false;
+            lastLoadRef.current = Date.now();
+            if (!silent) { setLoading(true); setLoadFailed(false); }
             try {
                 // Construir las queries (sin join embebido en teams para evitar problemas PostgREST)
                 let teamsQuery = supabase
@@ -183,7 +232,7 @@ export const DataProvider = ({ children }) => {
 
                 let matchesQuery = supabase
                     .from('matches')
-                    .select(`*, t1:team1_id (id, name, user_id), t2:team2_id (id, name, user_id)`)
+                    .select(`*, t1:team1_id (id, name, user_id, user_id_2), t2:team2_id (id, name, user_id, user_id_2)`)
                     .eq('sport', sport);
 
                 let courtsQuery = supabase
@@ -206,6 +255,7 @@ export const DataProvider = ({ children }) => {
                     courtsQuery,
                 ]);
 
+                if (cancelled) return;
                 if (teamsResult.error)   throw teamsResult.error;
                 if (matchesResult.error) throw matchesResult.error;
                 if (courtsResult.error)  throw courtsResult.error;
@@ -214,10 +264,14 @@ export const DataProvider = ({ children }) => {
                 const teamIds = teamsResult.data.map(t => t.id);
                 let availabilityMap = {};
                 if (teamIds.length > 0) {
-                    const { data: availData } = await supabase
+                    const { data: availData, error: availErr } = await supabase
                         .from('availability')
                         .select('team_id, day, hour')
                         .in('team_id', teamIds);
+                    if (cancelled) return;
+                    // En una recarga silenciosa, si las horas no llegan se conserva lo que había
+                    // (antes se quedaban todas las fichas "sin horas" en memoria).
+                    if (availErr && silent) throw availErr;
                     if (availData) {
                         availData.forEach(a => {
                             if (!availabilityMap[a.team_id]) availabilityMap[a.team_id] = [];
@@ -267,6 +321,7 @@ export const DataProvider = ({ children }) => {
 
                 // Cargar app_settings (claves por ámbito deporte/categoría)
                 const { data: settingsData } = await supabase.from('app_settings').select('*');
+                if (cancelled) return;
                 if (settingsData) {
                     const s = {};
                     settingsData.forEach(row => { s[row.key] = row.value; });
@@ -281,16 +336,55 @@ export const DataProvider = ({ children }) => {
                         draft_first_group: s[`draft_first_group__${suffix}`] || ''
                     });
                 }
+                setLoadedKey(myKey);
 
             } catch (error) {
                 console.error('Error fetching data:', error);
+                if (!cancelled && !silent) setLoadFailed(true);
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         fetchData();
-    }, [sport, tennisCategory]);
+        return () => { cancelled = true; };
+        // user?.id: si en el mismo móvil entra otra persona, se cargan SUS datos (las horas son privadas)
+    }, [sport, tennisCategory, reloadTick, user?.id]);
+
+    // Pádel: solicitudes de pareja que me tocan. La BD solo devuelve la mía, las que llegan a
+    // mi pareja y, a los monitores, todas. Se cargan siempre: el aviso sale también en Inicio.
+    useEffect(() => {
+        if (!user?.id) { setPairRequests([]); return; }
+        let cancelled = false;
+        (async () => {
+            const { data: reqs, error } = await supabase.from('pair_requests')
+                .select('id, team_id, user_id, requester_name, created_at, team:team_id (id, name, user_id, user_id_2)');
+            if (cancelled) return;
+            // Si la consulta falla (mala cobertura) se conserva lo que había: no desaparece una solicitud en curso
+            if (error) { console.warn('No se pudieron leer las solicitudes de pareja:', error.message); return; }
+            setPairRequests(reqs || []);
+        })();
+        return () => { cancelled = true; };
+    }, [user?.id, reloadTick, pairTick]);
+
+    // Al volver a la app (móvil en segundo plano, otra pestaña) los jugadores recargan los datos
+    // en silencio: en pádel la pareja comparte horas y avisos, y sin esto cada uno vería una copia
+    // vieja. A los monitores no se les recarga solos para no pisarles una operación a medias.
+    useEffect(() => {
+        let lastPairs = 0;
+        const onVisible = () => {
+            if (document.visibilityState !== 'visible' || !user?.id) return;
+            if (user?.role === 'admin') {
+                // Monitores: solo las solicitudes de pareja (las de parejas sin cuenta dependen de ellos)
+                if (Date.now() - lastPairs > 30000) { lastPairs = Date.now(); reloadPairRequests(); }
+                return;
+            }
+            if (Date.now() - lastLoadRef.current < 60000) return;
+            reloadData();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, [user?.id, user?.role, reloadData, reloadPairRequests]);
 
     // --- Actions ---
 
@@ -395,11 +489,13 @@ export const DataProvider = ({ children }) => {
             // 3. Notificaciones
             try {
                 const notifInserts = [];
+                const acc = await freshAccountsOf([match.t1, match.t2]);
                 const resultBase = `${match.t1.name} vs ${match.t2.name} — ${score}`;
                 const loserMsg = `📊 Partido terminado: ${resultBase}. +${loserPts} punto${loserPts !== 1 ? 's' : ''}.`;
-                if (match.t1.user_id) notifInserts.push({ user_id: match.t1.user_id, match_id: matchId, type: 'result_saved', message: match.t1.id === winner.id ? `🏆 ¡Ganado! ${resultBase}. +${winnerPts} puntos.` : loserMsg });
-                if (match.t2.user_id) notifInserts.push({ user_id: match.t2.user_id, match_id: matchId, type: 'result_saved', message: match.t2.id === winner.id ? `🏆 ¡Ganado! ${resultBase}. +${winnerPts} puntos.` : loserMsg });
-                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+                for (const t of [match.t1, match.t2]) {
+                    for (const uid of acc(t)) notifInserts.push({ user_id: uid, match_id: matchId, type: 'result_saved', message: t.id === winner.id ? `🏆 ¡Ganado! ${resultBase}. +${winnerPts} puntos.` : loserMsg });
+                }
+                await sendNotifications(notifInserts);
             } catch (notifErr) {
                 console.warn('No se pudieron enviar notificaciones de resultado:', notifErr);
             }
@@ -425,9 +521,11 @@ export const DataProvider = ({ children }) => {
             const match = matchesRef.current.find(m => m.id === matchId);
             if (match?.published) try {
                 const notifInserts = [];
-                if (match.t1?.user_id) notifInserts.push({ user_id: match.t1.user_id, match_id: matchId, type: 'match_updated', message: `⏸️ Partido aplazado: ${match.t1.name} vs ${match.t2.name}. Os avisaremos con la nueva hora.` });
-                if (match.t2?.user_id) notifInserts.push({ user_id: match.t2.user_id, match_id: matchId, type: 'match_updated', message: `⏸️ Partido aplazado: ${match.t2.name} vs ${match.t1.name}. Os avisaremos con la nueva hora.` });
-                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+                const acc = await freshAccountsOf([match.t1, match.t2]);
+                for (const [me, rival] of [[match.t1, match.t2], [match.t2, match.t1]]) {
+                    for (const uid of acc(me)) notifInserts.push({ user_id: uid, match_id: matchId, type: 'match_updated', message: `⏸️ Partido aplazado: ${me.name} vs ${rival?.name}. Os avisaremos con la nueva hora.` });
+                }
+                await sendNotifications(notifInserts);
             } catch (notifErr) { console.warn('No se pudo avisar del aplazamiento:', notifErr); }
         } catch (error) {
             console.error('Error postponing match:', error);
@@ -468,9 +566,10 @@ export const DataProvider = ({ children }) => {
             try {
                 const notifInserts = [];
                 const loserPtsMsg = loserPts < 0 ? `${loserPts} punto` : loserPts === 0 ? '+0 puntos' : `+${loserPts} puntos`;
-                if (winner.user_id) notifInserts.push({ user_id: winner.user_id, match_id: matchId, type: 'result_saved', message: `🏆 Victoria por W.O.: ${winner.name} vs ${loser.name}. +${winnerPts} puntos.` });
-                if (loser.user_id)  notifInserts.push({ user_id: loser.user_id,  match_id: matchId, type: 'result_saved', message: `📋 W.O. registrado: ${loser.name} no se presentó vs ${winner.name}. ${loserPtsMsg}.` });
-                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+                const acc = await freshAccountsOf([winner, loser]);
+                for (const uid of acc(winner)) notifInserts.push({ user_id: uid, match_id: matchId, type: 'result_saved', message: `🏆 Victoria por W.O.: ${winner.name} vs ${loser.name}. +${winnerPts} puntos.` });
+                for (const uid of acc(loser))  notifInserts.push({ user_id: uid, match_id: matchId, type: 'result_saved', message: `📋 W.O. registrado: ${loser.name} no se presentó vs ${winner.name}. ${loserPtsMsg}.` });
+                await sendNotifications(notifInserts);
             } catch (notifErr) {
                 console.warn('No se pudieron enviar notificaciones de W.O.:', notifErr);
             }
@@ -501,7 +600,7 @@ export const DataProvider = ({ children }) => {
             const { data, error } = await supabase
                 .from('matches')
                 .insert(insertRow)
-                .select(`*, t1:team1_id (id, name, user_id), t2:team2_id (id, name, user_id)`)
+                .select(`*, t1:team1_id (id, name, user_id, user_id_2), t2:team2_id (id, name, user_id, user_id_2)`)
                 .single();
             if (error) throw error;
 
@@ -534,7 +633,7 @@ export const DataProvider = ({ children }) => {
                 .from('matches')
                 .update(dbUpdates)
                 .eq('id', matchId)
-                .select(`*, t1:team1_id (id, name, user_id), t2:team2_id (id, name, user_id)`)
+                .select(`*, t1:team1_id (id, name, user_id, user_id_2), t2:team2_id (id, name, user_id, user_id_2)`)
                 .single();
             if (error) throw error;
 
@@ -549,25 +648,28 @@ export const DataProvider = ({ children }) => {
                 const prevIds = new Set([before?.t1?.id, before?.t2?.id].filter(Boolean));
                 const nowIds = new Set([processed.t1?.id, processed.t2?.id].filter(Boolean));
                 const notifInserts = [];
+                const acc = await freshAccountsOf([before?.t1, before?.t2, processed.t1, processed.t2]);
                 // Quien SALE del partido: se le avisa y se le retiran los avisos antiguos de este partido
                 for (const t of [before?.t1, before?.t2]) {
-                    if (t?.id && !nowIds.has(t.id) && t.user_id) {
-                        await supabase.from('notifications').delete().eq('match_id', matchId).eq('user_id', t.user_id);
-                        notifInserts.push({ user_id: t.user_id, match_id: matchId, type: 'match_cancelled', message: `❌ Ya no juegas ${before.t1.name} vs ${before.t2.name}. Te avisaremos si te asignan otro partido.` });
+                    if (t?.id && !nowIds.has(t.id)) {
+                        for (const uid of acc(t)) {
+                            await supabase.from('notifications').delete().eq('match_id', matchId).eq('user_id', uid);
+                            notifInserts.push({ user_id: uid, match_id: matchId, type: 'match_cancelled', message: `❌ Ya no juegas ${before.t1.name} vs ${before.t2.name}. Te avisaremos si te asignan otro partido.` });
+                        }
                     }
                 }
                 // Quien ENTRA nuevo: "nuevo partido"; quien sigue: "partido actualizado"
                 for (const [me, rival] of [[processed.t1, processed.t2], [processed.t2, processed.t1]]) {
-                    if (!me?.user_id) continue;
+                    if (!me) continue;
                     const isNew = !prevIds.has(me.id);
-                    notifInserts.push({
-                        user_id: me.user_id, match_id: processed.id,
+                    for (const uid of acc(me)) notifInserts.push({
+                        user_id: uid, match_id: processed.id,
                         type: isNew ? 'match_assigned' : 'match_updated',
                         message: isNew ? `🗓️ Nuevo partido: ${me.name} vs ${rival?.name} — ${timeStr}.`
                                        : `✏️ Partido actualizado: ${me.name} vs ${rival?.name} — ${timeStr}.`
                     });
                 }
-                if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+                await sendNotifications(notifInserts);
             } catch (notifErr) {
                 console.warn('No se pudo notificar actualización de partido:', notifErr);
             }
@@ -599,21 +701,15 @@ export const DataProvider = ({ children }) => {
             if (match && match.published) {
                 try {
                     const notifInserts = [];
-                    if (match.t1?.user_id) {
-                        notifInserts.push({
-                            user_id: match.t1.user_id,
+                    const acc = await freshAccountsOf([match.t1, match.t2]);
+                    for (const [me, rival] of [[match.t1, match.t2], [match.t2, match.t1]]) {
+                        for (const uid of acc(me)) notifInserts.push({
+                            user_id: uid,
                             type: 'match_cancelled',
-                            message: `❌ Partido cancelado: ${match.t1.name} vs ${match.t2.name}.`
+                            message: `❌ Partido cancelado: ${me.name} vs ${rival?.name}.`
                         });
                     }
-                    if (match.t2?.user_id) {
-                        notifInserts.push({
-                            user_id: match.t2.user_id,
-                            type: 'match_cancelled',
-                            message: `❌ Partido cancelado: ${match.t2.name} vs ${match.t1.name}.`
-                        });
-                    }
-                    if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+                    await sendNotifications(notifInserts);
                 } catch (notifErr) {
                     console.warn('No se pudo notificar cancelación:', notifErr);
                 }
@@ -680,19 +776,20 @@ export const DataProvider = ({ children }) => {
         // también debe recibir su aviso (el estado local tendría su user_id a null).
         try {
             const teamIds = [...new Set(drafts.flatMap(m => [m.team1_id ?? m.t1?.id, m.team2_id ?? m.t2?.id]).filter(Boolean))];
-            const { data: fresh } = await supabase.from('teams').select('id, name, user_id').in('id', teamIds);
+            const { data: fresh } = await supabase.from('teams').select('id, name, user_id, user_id_2').in('id', teamIds);
             const byId = Object.fromEntries((fresh || []).map(t => [t.id, t]));
             const notifInserts = [];
             for (const m of drafts) {
                 const t1 = byId[m.team1_id ?? m.t1?.id] || m.t1;
                 const t2 = byId[m.team2_id ?? m.t2?.id] || m.t2;
                 const timeStr = slotTimeLabel(m.slot || m.slot_id);
-                if (t1?.user_id) notifInserts.push({ user_id: t1.user_id, match_id: m.id, type: 'match_assigned', message: `🗓️ Nuevo partido: ${t1.name} vs ${t2?.name} — ${timeStr}.` });
-                if (t2?.user_id) notifInserts.push({ user_id: t2.user_id, match_id: m.id, type: 'match_assigned', message: `🗓️ Nuevo partido: ${t2.name} vs ${t1?.name} — ${timeStr}.` });
+                for (const [me, rival] of [[t1, t2], [t2, t1]]) {
+                    for (const uid of accountsOf(me)) notifInserts.push({ user_id: uid, match_id: m.id, type: 'match_assigned', message: `🗓️ Nuevo partido: ${me.name} vs ${rival?.name} — ${timeStr}.` });
+                }
             }
-            if (notifInserts.length > 0) await supabase.from('notifications').insert(notifInserts);
+            await sendNotifications(notifInserts);
             // Refrescar user_id en el estado local para el resto de la sesión
-            setTeams(prev => prev.map(t => byId[t.id] ? { ...t, user_id: byId[t.id].user_id } : t));
+            setTeams(prev => prev.map(t => byId[t.id] ? { ...t, user_id: byId[t.id].user_id, user_id_2: byId[t.id].user_id_2 ?? null } : t));
         } catch (notifErr) {
             console.warn('No se pudieron enviar notificaciones de jornada:', notifErr);
         }
@@ -1098,13 +1195,27 @@ export const DataProvider = ({ children }) => {
     };
 
     const updateWeekOff = useCallback(async (teamId, weekOff) => {
-        try {
-            const { error } = await supabase.from('teams').update({ week_off: weekOff }).eq('id', teamId);
-            if (error) throw error;
-            setTeams(prev => prev.map(t => t.id === teamId ? { ...t, week_off: weekOff } : t));
-        } catch (error) {
-            console.error('Error updating week_off:', error);
-        }
+        // .select() para saber si la BD lo aplicó de verdad: un cambio no permitido no da error,
+        // simplemente no toca ninguna fila (antes el interruptor parecía cambiado sin estarlo).
+        const { data: rows, error } = await supabase.from('teams').update({ week_off: weekOff }).eq('id', teamId).select('id');
+        if (error) throw new Error(error.message);
+        if (!rows || rows.length === 0) throw new Error('No se pudo cambiar: esta ficha no está unida a tu cuenta.');
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, week_off: weekOff } : t));
+    }, []);
+
+    // Corregir el nombre de un jugador o de una pareja (solo monitores; la BD se lo impide al resto)
+    const renameTeam = useCallback(async (teamId, name) => {
+        const clean = (name || '').trim().replace(/\s+/g, ' ');
+        if (clean.length < 3) throw new Error('El nombre es demasiado corto.');
+        const { data: rows, error } = await supabase.from('teams').update({ name: clean }).eq('id', teamId).select('id, name');
+        if (error) throw new Error(error.message);
+        if (!rows || rows.length === 0 || rows[0].name !== clean) throw new Error('No se pudo cambiar el nombre.');
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, name: clean } : t));
+        setMatches(prev => prev.map(m => ({
+            ...m,
+            t1: m.t1?.id === teamId ? { ...m.t1, name: clean } : m.t1,
+            t2: m.t2?.id === teamId ? { ...m.t2, name: clean } : m.t2
+        })));
     }, []);
 
     // Asignar / cambiar el grupo de un jugador (solo admin — protegido por trigger en BD)
@@ -1200,16 +1311,64 @@ export const DataProvider = ({ children }) => {
     }, [sport, tennisCategory]);
 
     // ─── Vincular / desvincular una cuenta a una ficha (solo admin; RPC con salvaguardas) ───
+    // En pádel una ficha admite dos cuentas (los dos de la pareja): la BD decide el asiento.
+    const refreshTeamSeats = useCallback(async (teamId) => {
+        const { data: row, error } = await supabase.from('teams').select('user_id, user_id_2').eq('id', teamId).maybeSingle();
+        // Si la relectura falla, se recarga todo: la ficha no puede quedarse enseñando lo de antes
+        if (error || !row) { reloadData(); return; }
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, user_id: row.user_id, user_id_2: row.user_id_2 } : t));
+    }, [reloadData]);
     const linkTeamAccount = useCallback(async (teamId, userId) => {
         const { error } = await supabase.rpc('admin_link_team', { p_team_id: teamId, p_user_id: userId });
         if (error) throw new Error(error.message);
-        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, user_id: userId } : t));
-    }, []);
-    const unlinkTeamAccount = useCallback(async (teamId) => {
-        const { error } = await supabase.from('teams').update({ user_id: null }).eq('id', teamId);
+        await refreshTeamSeats(teamId);
+        reloadPairRequests();   // vincular a mano resuelve las solicitudes pendientes de esa cuenta/pareja
+    }, [refreshTeamSeats, reloadPairRequests]);
+    const unlinkTeamAccount = useCallback(async (teamId, userId) => {
+        const { error } = await supabase.rpc('admin_unlink_team', { p_team_id: teamId, p_user_id: userId });
         if (error) throw new Error(error.message);
-        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, user_id: null } : t));
-    }, []);
+        await refreshTeamSeats(teamId);
+        reloadPairRequests();
+    }, [refreshTeamSeats, reloadPairRequests]);
+
+    // ─── Pádel: lo que hace cada jugador con su pareja (RPC con salvaguardas en BD) ───
+    // Crear mi pareja (cuentas que aún no tienen pareja de pádel, p. ej. jugadores de tenis)
+    const createMyPair = useCallback(async (partnerName) => {
+        try {
+            const { data, error } = await supabase.rpc('padel_create_pair', { p_partner_name: partnerName });
+            if (error) throw new Error(error.message);
+            return data;
+        } finally { reloadData(); }
+    }, [reloadData]);
+    // Pedir unirme a la pareja que ya creó mi compañero/a → { status: 'requested' }
+    const joinPair = useCallback(async (teamId) => {
+        try {
+            const { data, error } = await supabase.rpc('padel_join_pair', { p_team_id: teamId });
+            if (error) throw new Error(error.message);
+            return data;
+        } finally { reloadData(); }
+    }, [reloadData]);
+    // Aceptar / rechazar a quien pide unirse a mi pareja
+    const respondPairRequest = useCallback(async (requestId, accept) => {
+        try {
+            const { data, error } = await supabase.rpc('padel_respond_join', { p_request_id: requestId, p_accept: accept });
+            if (error) throw new Error(error.message);
+            return data;
+        } finally { reloadData(); }
+    }, [reloadData]);
+    // Retirar mi solicitud
+    const cancelPairRequest = useCallback(async (requestId) => {
+        const { error } = await supabase.from('pair_requests').delete().eq('id', requestId);
+        if (error) { reloadPairRequests(); throw new Error(error.message); }
+        setPairRequests(prev => prev.filter(r => r.id !== requestId));
+    }, [reloadPairRequests]);
+    // Quitar la segunda cuenta de mi pareja (o salirme yo si soy la segunda)
+    const unlinkPartner = useCallback(async (teamId) => {
+        try {
+            const { error } = await supabase.rpc('padel_unlink_partner', { p_team_id: teamId });
+            if (error) throw new Error(error.message);
+        } finally { reloadData(); }
+    }, [reloadData]);
 
     // Borra un horario (especial o extra de un día). Falla si hay partidos pendientes en él.
     const removeSlot = useCallback(async (slotId) => {
@@ -1240,6 +1399,7 @@ export const DataProvider = ({ children }) => {
         updateTeamAvailability,
         updateCourtCount,
         updateWeekOff,
+        renameTeam,
         updateTeamGroup,
         updateAppSettings,
         saveMatchResult,
@@ -1265,13 +1425,23 @@ export const DataProvider = ({ children }) => {
         togglePreferredSlot,
         linkTeamAccount,
         unlinkTeamAccount,
+        pairRequests,
+        createMyPair,
+        joinPair,
+        respondPairRequest,
+        cancelPairRequest,
+        unlinkPartner,
+        reloadData,
+        reloadPairRequests,
+        dataReady,
+        loadFailed,
         generateDemoData,
         listUsers,
         setUserRole,
         loading,
         currentSlots,
         availabilitySlots
-    }), [teams, matches, courts, courtsMeta, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, adjustCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, addFixedHour, removeFixedHour, addSpecialSlot, clearExtraCourts, removeSlot, togglePreferredSlot, linkTeamAccount, unlinkTeamAccount]);
+    }), [teams, matches, courts, courtsMeta, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, adjustCourtCount, updateWeekOff, renameTeam, updateTeamGroup, updateAppSettings, addFixedHour, removeFixedHour, addSpecialSlot, clearExtraCourts, removeSlot, togglePreferredSlot, linkTeamAccount, unlinkTeamAccount, pairRequests, createMyPair, joinPair, respondPairRequest, cancelPairRequest, unlinkPartner, reloadData, reloadPairRequests, dataReady, loadFailed]);
 
     return (
         <DataContext.Provider value={value}>
