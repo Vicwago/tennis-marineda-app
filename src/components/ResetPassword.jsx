@@ -37,7 +37,7 @@ export default function ResetPassword({ onDone }) {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden">
+        <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden safe-screen">
             <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10 pointer-events-none" style={{ background: 'var(--cyan)' }} />
             <div className="glass-card w-full max-w-md p-8 rounded-2xl relative fade-up">
                 <div className="flex items-center justify-center gap-3 mb-8">

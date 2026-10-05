@@ -45,7 +45,8 @@ const ArticleDetail = ({ articleId, onBack }) => {
                 />
                 <button
                     onClick={onBack}
-                    className="absolute top-4 left-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white hover:bg-brand-red transition-colors"
+                    className="absolute left-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white hover:bg-brand-red transition-colors"
+                    style={{ top: 'calc(1rem + var(--sat))' }}
                 >
                     <ArrowLeft size={24} />
                 </button>

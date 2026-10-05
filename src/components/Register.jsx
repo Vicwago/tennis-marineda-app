@@ -92,7 +92,7 @@ export default function Register({ onNavigateToLogin }) {
     // Pantalla: confirmación de email requerida por Supabase
     if (needsConfirmation) {
         return (
-            <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden">
+            <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden safe-screen">
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10 pointer-events-none" style={{ background: 'var(--cyan)' }} />
                 <div className="glass-card w-full max-w-md p-10 rounded-2xl relative text-center fade-up">
                     <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: 'rgba(0,212,255,0.12)', border: '2px solid rgba(0,212,255,0.4)' }}>
@@ -119,7 +119,7 @@ export default function Register({ onNavigateToLogin }) {
     // Pantalla: registro exitoso (sin confirmación requerida)
     if (success) {
         return (
-            <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden">
+            <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden safe-screen">
                 {/* Glow orbs */}
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10 pointer-events-none" style={{ background: 'var(--cyan)' }} />
                 <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full blur-3xl opacity-8 pointer-events-none" style={{ background: '#E53935' }} />
@@ -144,7 +144,7 @@ export default function Register({ onNavigateToLogin }) {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden">
+        <div className="min-h-screen flex items-center justify-center cyber-grid-bg px-4 relative overflow-hidden safe-screen">
             {/* Scan line */}
             <div className="scan-line pointer-events-none" />
 

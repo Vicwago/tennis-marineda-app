@@ -9,6 +9,11 @@
 
 @layer base {
     :root {
+        /* Margenes seguros del iPhone (isla/notch arriba, barra de inicio abajo) cuando la web
+           esta instalada como app. En Android y escritorio valen 0. */
+        --sat: env(safe-area-inset-top, 0px);
+        --sab: env(safe-area-inset-bottom, 0px);
+
         /* Fondos */
         --bg-deepest: #030811;
         --bg-deep:    #060d1a;
@@ -313,4 +318,13 @@
     .scroll-tabs-container.scrolled-end::after {
         opacity: 0;
     }
+}
+
+/* -- iPhone instalado como app (PWA) --------------------------------------
+   La app se dibuja tambien bajo la barra de estado (viewport-fit=cover +
+   status-bar black-translucent). Las pantallas a pagina completa dejan libre
+   la zona de la isla/notch y la de la barra de inicio. */
+.safe-screen {
+    padding-top: max(1rem, calc(var(--sat) + 0.5rem)) !important;
+    padding-bottom: max(1rem, calc(var(--sab) + 0.5rem)) !important;
 }

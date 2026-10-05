@@ -25,7 +25,7 @@ const applyTheme = (theme) => {
 applyTheme(getInitialTheme());
 
 const SplashScreen = () => (
-  <div className="min-h-screen flex flex-col items-center justify-center cyber-grid-bg relative overflow-hidden">
+  <div className="min-h-screen flex flex-col items-center justify-center cyber-grid-bg relative overflow-hidden safe-screen">
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full" style={{ background: 'radial-gradient(circle, rgba(229,57,53,0.12) 0%, transparent 70%)' }} />
       <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full" style={{ background: 'radial-gradient(circle, rgba(0,212,255,0.10) 0%, transparent 70%)' }} />
@@ -93,7 +93,7 @@ const AppContent = () => {
   // Route: News
   if (currentPath === '/noticias') {
     return (
-      <div className="min-h-screen pb-20" style={{ background: 'var(--bg-deepest)' }}>
+      <div className="min-h-screen pb-20" style={{ background: 'var(--bg-deepest)', paddingTop: 'var(--sat)' }}>
         <Suspense fallback={<SplashScreen />}>
           <NewsFeed onBack={() => {
             setSport(null);

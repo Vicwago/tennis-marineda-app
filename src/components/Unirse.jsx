@@ -40,7 +40,7 @@ export default function Unirse({ onNavigate, isAuthenticated }) {
     );
 
     return (
-        <div className="min-h-screen cyber-grid-bg flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="min-h-screen cyber-grid-bg flex items-center justify-center p-4 relative overflow-hidden safe-screen">
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full" style={{ background: 'radial-gradient(circle, rgba(229,57,53,0.14) 0%, transparent 70%)' }} />
                 <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full" style={{ background: 'radial-gradient(circle, rgba(0,212,255,0.10) 0%, transparent 70%)' }} />

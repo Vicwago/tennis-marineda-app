@@ -2472,7 +2472,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
             {/* Notificaciones mobile (bottom sheet) */}
             {showNotifications && (
-                <div className="md:hidden fixed inset-0 z-50 flex items-end justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={() => setShowNotifications(false)}>
+                <div className="md:hidden fixed inset-0 z-50 flex items-end justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', paddingTop: 'calc(1rem + var(--sat))', paddingBottom: 'calc(1rem + var(--sab))' }} onClick={() => setShowNotifications(false)}>
                     <div className="w-full max-w-md" onClick={e => e.stopPropagation()}>
                         <NotificationsPanel onClose={() => setShowNotifications(false)} />
                     </div>
@@ -2768,7 +2768,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
                 {/* Mobile Header */}
                 <header className="md:hidden p-4 flex justify-between items-center sticky top-0 z-30"
-                    style={{ background: 'rgba(6,13,26,0.9)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}>
+                    style={{ background: 'rgba(6,13,26,0.9)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)', paddingTop: 'calc(1rem + var(--sat))' }}>
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg p-1" style={{ background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.3)' }}>
                             <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
@@ -2799,7 +2799,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
                 {/* Mobile Menu Overlay */}
                 {isMobileMenuOpen && (
-                    <div className="md:hidden fixed inset-0 z-20 pt-16 overflow-y-auto" style={{ background: 'var(--bg-nav)', backdropFilter: 'blur(16px)' }}>
+                    <div className="md:hidden fixed inset-0 z-20 overflow-y-auto" style={{ background: 'var(--bg-nav)', backdropFilter: 'blur(16px)', paddingTop: 'calc(4rem + var(--sat))', paddingBottom: 'var(--sab)' }}>
                         <div className="px-4 py-4 space-y-2">
                             <button onClick={() => { setSport(null); setIsMobileMenuOpen(false); }} className="w-full p-3.5 rounded-xl text-left font-bold text-white text-sm" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)' }}>🏠 Inicio</button>
 

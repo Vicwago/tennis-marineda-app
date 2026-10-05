@@ -115,7 +115,7 @@ export default function Login({ onNavigateToRegister }) {
     // ── Pantalla éxito recuperación ──
     if (forgotMode && resetSent) {
         return (
-            <div className="min-h-screen cyber-grid-bg flex items-center justify-center p-4 relative overflow-hidden">
+            <div className="min-h-screen cyber-grid-bg flex items-center justify-center p-4 relative overflow-hidden safe-screen">
                 <div className="pointer-events-none absolute inset-0 overflow-hidden">
                     <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full" style={{ background: 'radial-gradient(circle, rgba(0,212,255,0.12) 0%, transparent 70%)' }} />
                 </div>
@@ -158,7 +158,7 @@ export default function Login({ onNavigateToRegister }) {
     }
 
     return (
-        <div className="min-h-screen cyber-grid-bg flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="min-h-screen cyber-grid-bg flex items-center justify-center p-4 relative overflow-hidden safe-screen">
 
             {/* ── Orbes de fondo ── */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">

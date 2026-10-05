@@ -106,7 +106,7 @@ export default function MatchChat({ match, onClose }) {
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
             <div
                 className="w-full md:w-[480px] md:max-h-[80vh] flex flex-col rounded-t-2xl md:rounded-2xl overflow-hidden"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)', maxHeight: '90vh' }}
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)', maxHeight: 'calc(100dvh - var(--sat) - 1rem)' }}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
@@ -168,7 +168,7 @@ export default function MatchChat({ match, onClose }) {
                 </div>
 
                 {/* Input */}
-                <form onSubmit={handleSend} className="p-4 shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'rgba(255,255,255,0.01)' }}>
+                <form onSubmit={handleSend} className="p-4 shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'rgba(255,255,255,0.01)', paddingBottom: 'calc(1rem + var(--sab))' }}>
                     <div className="flex gap-2 items-center">
                         <input
                             ref={inputRef}
