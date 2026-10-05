@@ -61,6 +61,10 @@ export default function Unirse({ onNavigate, isAuthenticated }) {
                     <Step n="3" title="Mira tu partido" text="Rival, día, hora y pista. Te avisa la campana cuando se publica la jornada." />
                 </div>
 
+                <p className="text-xs mb-6 px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
+                    <b className="text-white">¿Juegas pádel?</b> Crea la cuenta solo uno de los dos (el capitán o capitana) y pon el nombre de tu pareja: esa cuenta marca las horas de los dos.
+                </p>
+
                 {isAuthenticated ? (
                     <button onClick={() => onNavigate('/')} className="btn-cyber w-full py-3.5 rounded-xl font-bold text-base flex items-center justify-center gap-2">
                         Ya tienes cuenta · Entrar en la app <ArrowRight size={18} />

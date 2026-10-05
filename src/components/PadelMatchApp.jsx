@@ -455,7 +455,9 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                         <Button size="sm" onClick={submitAdd} disabled={addBusy || !addName.trim()}>{addBusy ? 'Añadiendo...' : 'Añadir'}</Button>
                         <Button size="sm" variant="secondary" onClick={() => { setAddOpen(false); setAddName(''); setAddGroup(''); }}>Cancelar</Button>
                     </div>
-                    <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>Sin cuenta: tú le gestionas la disponibilidad. Cuando esa persona se registre con este mismo nombre, su cuenta se vinculará sola a este jugador (conserva grupo, puntos e historial).</p>
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>{isTennis
+                        ? 'Sin cuenta: tú le gestionas la disponibilidad. Cuando esa persona se registre con este mismo nombre, su cuenta se vinculará sola a este jugador (conserva grupo, puntos e historial).'
+                        : 'Sin cuenta: tú le gestionas la disponibilidad. Escribe los dos nombres separados por una barra. Cuando uno de los dos se registre en pádel con esos mismos dos nombres (el suyo y el de su pareja, en cualquier orden), su cuenta se vinculará sola a esta pareja como capitán.'}</p>
                 </div>
             )}
 
@@ -709,10 +711,12 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                 </div>
                 <h2 className="text-xl font-bold text-white mb-2">Cuenta no vinculada</h2>
                 <p className="mb-4" style={{ color: 'var(--text-2)' }}>
-                    Tu cuenta aún no está vinculada a ningún jugador en esta categoría.
+                    {sport === 'padel' ? 'Tu cuenta no es la capitana de ninguna pareja de pádel.' : 'Tu cuenta aún no está vinculada a ningún jugador en esta categoría.'}
                 </p>
                 <p className="text-xs px-3 py-2 rounded-lg" style={{ color: 'var(--cyan)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
-                    Si esta es tu categoría, dile a los monitores que vinculen tu cuenta desde tu ficha en "Jugadores" (botón "Vincular cuenta"). Si no, cambia arriba al deporte o categoría con el que te registraste.
+                    {sport === 'padel'
+                        ? 'En pádel hay una sola cuenta por pareja: la del capitán o capitana, que es quien marca las horas de los dos. Si tu pareja ya se registró, las horas las pone ella; tú puedes ver aquí el ranking y los partidos. Si el capitán eres tú, pide a los monitores que vinculen tu cuenta desde la ficha de vuestra pareja en "Parejas" (botón "Vincular cuenta"). Y si juegas tenis, cambia arriba de deporte.'
+                        : 'Si esta es tu categoría, dile a los monitores que vinculen tu cuenta desde tu ficha en "Jugadores" (botón "Vincular cuenta"). Si no, cambia arriba al deporte o categoría con el que te registraste.'}
                 </p>
             </div>
         );
@@ -748,7 +752,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                         </div>
                         <div>
                             <h2 className="text-lg font-bold text-white">Hola, <span style={{ color: 'var(--cyan)' }}>{team?.name}</span></h2>
-                            <p className="text-xs" style={{ color: 'var(--text-2)' }}>Gestiona tus horarios para esta semana.</p>
+                            <p className="text-xs" style={{ color: 'var(--text-2)' }}>{sport === 'padel' ? 'Marca las horas a las que podéis jugar los dos esta semana.' : 'Gestiona tus horarios para esta semana.'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Lock, Activity, Eye, EyeOff, CheckCircle, Loader2 } from 'lucide-react';
+import { User, Users, Mail, Lock, Activity, Eye, EyeOff, CheckCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import logoUrl from '../assets/logo.png';
 import CreditFooter from './CreditFooter';
@@ -13,6 +13,7 @@ export default function Register({ onNavigateToLogin }) {
         confirmPassword: '',
         sport: 'tennis',
         category: 'adults',
+        partnerName: '',
         inviteCode: '',
         consent: false
     });
@@ -48,6 +49,7 @@ export default function Register({ onNavigateToLogin }) {
         if (!form.email.trim()) return 'El email es obligatorio.';
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'El email no es válido.';
         if (!form.inviteCode.trim()) return 'Introduce el código de invitación del club.';
+        if (!isTennis && form.partnerName.trim().length < 3) return 'Escribe el nombre y apellido de tu pareja de pádel.';
         if (form.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
         if (!/[a-zA-Z]/.test(form.password) || !/[0-9]/.test(form.password)) return 'La contraseña debe incluir letras y números.';
         if (form.password !== form.confirmPassword) return 'Las contraseñas no coinciden.';
@@ -70,7 +72,8 @@ export default function Register({ onNavigateToLogin }) {
                 form.password,
                 form.sport,
                 isTennis ? form.category : null,
-                form.inviteCode
+                form.inviteCode,
+                isTennis ? '' : form.partnerName
             );
             setSuccess(true);
         } catch (err) {
@@ -133,7 +136,9 @@ export default function Register({ onNavigateToLogin }) {
                         Bienvenido/a a <span className="font-bold text-white">Escuela de Tenis Marineda</span>.
                     </p>
                     <p className="text-sm mb-8" style={{ color: 'var(--text-3)' }}>
-                        Tu perfil y equipo han sido creados. Ya puedes acceder a la app.
+                        {isTennis
+                            ? 'Tu perfil y tu ficha de jugador están creados. Ya puedes acceder a la app.'
+                            : 'Tu perfil y la ficha de vuestra pareja están creados. Entra y marca en "Mi Disponibilidad" las horas a las que podéis jugar los dos.'}
                     </p>
                     <button onClick={onNavigateToLogin} className="btn-cyber w-full py-3 rounded-xl font-bold text-base">
                         Ir al Login
@@ -252,6 +257,28 @@ export default function Register({ onNavigateToLogin }) {
                                 <option value="adults">Adultos</option>
                                 <option value="juveniles">Juveniles</option>
                             </select>
+                        </div>
+                    )}
+
+                    {/* Pareja (solo pádel): una cuenta por pareja */}
+                    {!isTennis && (
+                        <div>
+                            <label htmlFor="reg-partner" className="block text-xs font-bold mb-1.5 uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Tu pareja de pádel</label>
+                            <div className="relative">
+                                <Users size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors" style={{ color: form.partnerName ? 'var(--cyan)' : 'var(--text-3)' }} />
+                                <input
+                                    id="reg-partner"
+                                    type="text"
+                                    placeholder="Nombre y apellido de tu pareja"
+                                    value={form.partnerName}
+                                    onChange={e => handleChange('partnerName', e.target.value)}
+                                    className="cyber-input w-full pl-9 pr-4 py-3 rounded-xl text-sm"
+                                    maxLength={80}
+                                />
+                            </div>
+                            <p className="text-xs mt-2 px-3 py-2 rounded-lg" style={{ color: 'var(--text-2)', background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.2)' }}>
+                                En pádel se registra <b className="text-white">solo uno de los dos</b>: quien crea la cuenta es el capitán o capitana de la pareja, marca las horas a las que podéis jugar los dos y recibe los avisos. Tu pareja no tiene que crear cuenta.
+                            </p>
                         </div>
                     )}
 

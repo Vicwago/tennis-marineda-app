@@ -114,7 +114,7 @@ export const AuthProvider = ({ children }) => {
         if (error) throw error;
     };
 
-    const register = async (name, email, password, sport, category = null, inviteCode = '') => {
+    const register = async (name, email, password, sport, category = null, inviteCode = '', partnerName = '') => {
         // El código de invitación lo comprueba SOLO el trigger de BD al crear la cuenta
         // (antes había una RPC pública de comprobación que servía de oráculo para adivinarlo
         // por fuerza bruta). Si es incorrecto, signUp falla y se traduce abajo.
@@ -130,6 +130,8 @@ export const AuthProvider = ({ children }) => {
                     full_name: name,
                     sport,
                     category: sport === 'tennis' ? category : null,
+                    // Pádel: una cuenta por pareja. El trigger llama a la ficha "Capitán / Compañero".
+                    partner_name: sport === 'padel' ? partnerName.trim() : null,
                     invite_code: inviteCode.trim()
                 }
             }
