@@ -5,6 +5,7 @@ import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
 import { useData, nextDateForSlot, generateSlots, parseSlotId } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../supabaseClient';
 import { useNotifications } from '../context/NotificationContext';
 import NotificationsPanel from './NotificationsPanel';
 import MatchChat from './MatchChat';
