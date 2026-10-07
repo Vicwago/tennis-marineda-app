@@ -3,7 +3,7 @@
 Proyecto Supabase: `tdmyduolpmxstaaowcpv` (región eu-west-1, Postgres 17).
 
 ## Estado real del esquema
-El esquema vivo tiene **13 migraciones registradas en Supabase** (ver `Dashboard → Database → Migrations`).
+El esquema vivo tiene las migraciones registradas en Supabase (ver `Dashboard → Database → Migrations`).
 Este directorio guarda las que definen la seguridad y la integridad, para que el repositorio sea la referencia:
 
 | Archivo | Qué hace |
@@ -17,11 +17,13 @@ Este directorio guarda las que definen la seguridad y la integridad, para que el
 | `07_revision_final_2026-09-23.sql` | `admin_link_team`, `set_team_availability`, chat solo para participantes, código de invitación oculto |
 | `08_padel_pareja_capitan_2026-10-05.sql` | Pádel: el registro pide el nombre de la pareja y la ficha se llama "Nombre / Pareja" |
 | `09_padel_dos_cuentas_por_pareja_2026-10-05.sql` | Pádel: una ficha con hasta dos cuentas (`teams.user_id_2`), solicitudes de unión (`pair_requests`) y RPC `padel_*`; nombre de perfil congelado; `set_team_availability` exige sesión |
+| `10_padel_parejas_remates_2026-10-06.sql` | Remates de parejas: avisos de semana libre y a solicitantes, bloqueos en `admin_link_team`/`admin_unlink_team`, `padel_respond_join` con `for update` |
+| `11_incidencias_bug_reports_2026-10-07.sql` | "¿Algo falla?": tabla `bug_reports` (texto + foto opcional, tope 10/día, estado nuevo/visto/resuelto) y bucket privado `bug-photos` (cada cuenta sube a su carpeta; la ven ella y los monitores) |
 
 `db/tests/09_parejas_prueba_en_seco.sql` comprueba la 09 de punta a punta (tenis intacto + todo el circuito de parejas) y **lo deshace todo** al terminar: se puede lanzar contra producción.
 
 ## Tablas (public)
-`profiles`, `teams`, `matches`, `availability`, `court_availability`, `app_settings`, `notifications`, `match_comments`, `chronicles`, `pair_requests` — todas con RLS activado. Vista: `matches_readable` (security_invoker).
+`profiles`, `teams`, `matches`, `availability`, `court_availability`, `app_settings`, `notifications`, `match_comments`, `chronicles`, `pair_requests`, `bug_reports` — todas con RLS activado. Vista: `matches_readable` (security_invoker).
 
 ## Reglas clave
 - Solo usuarios **autenticados** leen datos del club (chronicles es pública para `/noticias`).

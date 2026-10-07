@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 // xlsx se importa bajo demanda dentro de handleFileUpload (evita ~400 KB en la carga inicial)
-import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon } from 'lucide-react';
+import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
 import { useData, nextDateForSlot, generateSlots, parseSlotId } from '../context/DataContext';
@@ -11,6 +11,7 @@ import NotificationsPanel from './NotificationsPanel';
 import MatchChat from './MatchChat';
 import ConfirmDialog, { useConfirm } from './ConfirmDialog';
 import CreditFooter from './CreditFooter';
+import { BugReportModal, BugReportsAdminModal, countNewBugReports } from './BugReport';
 
 // --- UI Components ---
 const Card = ({ children, className = "" }) => (
@@ -2187,6 +2188,10 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     const { pairRequests, reloadData } = useData();
     const { data, appSettings, currentSlots, availabilitySlots, loading, updateTeamAvailability, updateCourtCount, adjustCourtCount, updateWeekOff, updateTeamGroup, updateAppSettings, saveMatchResult, createSchedule, publishSchedule, discardDrafts, addFixedHour, removeFixedHour, addSpecialSlot, clearExtraCourts, removeSlot, togglePreferredSlot, linkTeamAccount, unlinkTeamAccount, generateDemoData, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, reopenMatch, createManualTeam, importPlayers, deleteTeam, clearAllData, listUsers, setUserRole } = useData();
     const [showUsersModal, setShowUsersModal] = useState(false);
+    // "¿Algo falla?": formulario del jugador y lista de incidencias de los monitores
+    const [showBugReport, setShowBugReport] = useState(false);
+    const [showBugAdmin, setShowBugAdmin] = useState(false);
+    const [newBugs, setNewBugs] = useState(0);
     const { unreadCount } = useNotifications();
 
     // Navigation State
@@ -2221,6 +2226,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     const courtsMeta = data?.courtsMeta || {};
     const isRealAdmin = user?.role === 'admin';
     const isAdmin = isRealAdmin && !previewAsPlayer;
+    const refreshBugCount = useCallback(() => { if (isRealAdmin) countNewBugReports().then(setNewBugs).catch(() => {}); }, [isRealAdmin]);
+    useEffect(() => { refreshBugCount(); }, [refreshBugCount]);
     // Lo que ve un jugador (y el modo "Ver como Jugador"): nunca los borradores
     const visibleMatches = useMemo(() => (isAdmin ? matches : matches.filter(m => m.published || m.completed)), [isAdmin, matches]);
     const isTennis = sport === 'tennis';
@@ -2580,6 +2587,9 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                             <p className="mt-1 text-sm" style={{ color: 'var(--text-2)' }}>
                                 {isAdmin ? 'Panel de gestión · Escuela de Tenis Marineda' : 'Tu espacio de resultados y partidos'}
                             </p>
+                            <button onClick={() => setShowBugReport(true)} className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium hover:underline" style={{ color: 'var(--cyan)' }}>
+                                <LifeBuoy size={14} /> ¿Algo falla o echas algo en falta? Cuéntanoslo
+                            </button>
                         </div>
                         {isAdmin && (
                             <span className="hidden md:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full"
@@ -2941,6 +2951,19 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>Hacer o quitar administradores (Mauri, Braulio...)</p>
                                 </div>
                             </button>
+                            <button
+                                onClick={() => { setShowProfilesModal(false); setShowBugAdmin(true); }}
+                                className="w-full flex items-center gap-3 p-4 rounded-xl text-left transition-all"
+                                style={{ background: 'rgba(0,255,135,0.06)', border: '1px solid rgba(0,255,135,0.25)', color: 'white' }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,255,135,0.12)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,255,135,0.06)'}
+                            >
+                                <LifeBuoy size={26} style={{ color: '#00ff87' }} />
+                                <div className="flex-1">
+                                    <p className="font-bold">Incidencias{newBugs > 0 ? ` (${newBugs} nueva${newBugs !== 1 ? 's' : ''})` : ''}</p>
+                                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>Lo que mandan los jugadores desde "¿Algo falla?"</p>
+                                </div>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2948,6 +2971,12 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
             {showUsersModal && (
                 <UsersModal onClose={() => setShowUsersModal(false)} listUsers={listUsers} setUserRole={setUserRole} currentUserId={user?.id} showConfirm={showConfirm} />
+            )}
+            {showBugReport && (
+                <BugReportModal onClose={() => setShowBugReport(false)} context={{ sport: sport || null, screen: `${sport || 'inicio'}/${sport ? activeTab : 'home'}` }} />
+            )}
+            {showBugAdmin && isRealAdmin && (
+                <BugReportsAdminModal onClose={() => { setShowBugAdmin(false); refreshBugCount(); }} onChanged={refreshBugCount} />
             )}
 
             {/* Sidebar (Desktop) */}
@@ -3149,6 +3178,13 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                             {previewAsPlayer ? '👤 Vista Jugador (activa)' : '🔧 Ver como Jugador'}
                         </button>
                     )}
+                    <button onClick={() => (isRealAdmin ? setShowBugAdmin(true) : setShowBugReport(true))}
+                        className="w-full flex items-center gap-2 justify-center px-4 py-2 rounded-lg transition-all text-sm mb-2"
+                        style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,212,255,0.14)'; e.currentTarget.style.color = 'var(--cyan)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,212,255,0.06)'; e.currentTarget.style.color = 'var(--text-2)'; }}>
+                        <LifeBuoy size={16} /> {isRealAdmin ? `Incidencias${newBugs > 0 ? ` (${newBugs})` : ''}` : '¿Algo falla? Cuéntanoslo'}
+                    </button>
                     <div className="flex gap-2">
                         <button onClick={onToggleTheme}
                             className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg transition-all text-sm flex-shrink-0"
@@ -3251,7 +3287,10 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 </div>
                             </div>
 
-                            <button onClick={logout} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-4" style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: '#ff6b6b' }}>Cerrar Sesión</button>
+                            <button onClick={() => { setIsMobileMenuOpen(false); if (isRealAdmin) setShowBugAdmin(true); else setShowBugReport(true); }} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-4 flex items-center gap-2" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--cyan)' }}>
+                                <LifeBuoy size={16} /> {isRealAdmin ? `Incidencias${newBugs > 0 ? ` (${newBugs} nuevas)` : ''}` : '¿Algo falla? Cuéntanoslo'}
+                            </button>
+                            <button onClick={logout} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-2" style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: '#ff6b6b' }}>Cerrar Sesión</button>
                             <CreditFooter className="mt-5 pb-2" />
                         </div>
                     </div>
