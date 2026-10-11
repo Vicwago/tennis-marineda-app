@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Bell, Check, CheckCheck, Calendar, Trophy, MessageSquare, X, BellOff, Users } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
 
@@ -48,6 +48,16 @@ const typeColor = (type) => {
 export default function NotificationsPanel({ onClose, onOpenPair }) {
     const { notifications, unreadCount, markAsRead, markAllRead, loading } = useNotifications();
     const panelRef = useRef(null);
+    // Abrir la campana = haberlos visto: el número rojo se quita solo (antes había que tocar
+    // cada aviso o "Leer todas" y nadie lo hacía). Los que eran nuevos siguen resaltados mientras
+    // el panel está abierto, para que se distingan.
+    const [freshIds, setFreshIds] = useState(() => new Set());
+    useEffect(() => {
+        const unread = notifications.filter(n => !n.is_read);
+        if (unread.length === 0) return;
+        setFreshIds(prev => { const next = new Set(prev); unread.forEach(n => next.add(n.id)); return next; });
+        markAllRead();
+    }, [notifications, markAllRead]);
 
     // Close on outside click
     useEffect(() => {
@@ -117,11 +127,11 @@ export default function NotificationsPanel({ onClose, onOpenPair }) {
                             className="flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors"
                             style={{
                                 borderBottom: '1px solid var(--border)',
-                                background: notif.is_read ? 'transparent' : 'rgba(0,212,255,0.04)',
-                                opacity: notif.is_read ? 0.6 : 1
+                                background: freshIds.has(notif.id) ? 'rgba(0,212,255,0.04)' : 'transparent',
+                                opacity: freshIds.has(notif.id) ? 1 : 0.6
                             }}
                             onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                            onMouseLeave={e => e.currentTarget.style.background = notif.is_read ? 'transparent' : 'rgba(0,212,255,0.04)'}
+                            onMouseLeave={e => e.currentTarget.style.background = freshIds.has(notif.id) ? 'rgba(0,212,255,0.04)' : 'transparent'}
                         >
                             {/* Icon */}
                             <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"

@@ -574,7 +574,12 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                                 defaultValue={team.group || ''}
                                                 placeholder="Sin grupo"
                                                 onClick={e => e.stopPropagation()}
-                                                onBlur={e => { const v = e.target.value.trim(); if (v !== (team.group || '')) onUpdateGroup(team.id, v); }}
+                                                onBlur={async e => {
+                                                    const input = e.currentTarget; const v = input.value.trim();
+                                                    if (v === (team.group || '')) return;
+                                                    try { await onUpdateGroup(team.id, v); }
+                                                    catch (err) { input.value = team.group || ''; showConfirm({ title: 'No se pudo cambiar el grupo', message: err?.message || String(err), cancelText: null, variant: 'warning' }); }
+                                                }}
                                                 onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                                                 className="text-[10px] font-bold rounded-full px-2 py-1 w-24 text-center outline-none focus:ring-1"
                                                 style={{ background: 'rgba(0,212,255,0.1)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.25)' }}
@@ -731,14 +736,20 @@ const looseNameMatch = (a, b) => {
 const pairParts = (name) => (name || '').split(/\s*[/&+,;]\s*|\s+(?:y|e|-|–)\s+/i).map(x => x.trim()).filter(Boolean);
 const pairMentions = (team, fullName) => !!fullName && pairParts(team?.name).some(part => looseNameMatch(part, fullName));
 const firstName = (txt) => (txt || '').trim().split(/\s+/)[0] || '';
+const samePair = (a, b) => {
+    const pa = pairParts(a?.name), pb = pairParts(b?.name);
+    if (pa.length !== 2 || pb.length !== 2) return false;
+    return (looseNameMatch(pa[0], pb[0]) && looseNameMatch(pa[1], pb[1])) || (looseNameMatch(pa[0], pb[1]) && looseNameMatch(pa[1], pb[0]));
+};
+const isMyTeam = (t, uid) => !!uid && (t?.user_id === uid || t?.user_id_2 === uid);
 
 // Lista de parejas a las que les queda sitio; primero las que me nombran
-const PadelJoinPicker = ({ teams, myTeamId, myName, onJoin, busy }) => {
+const PadelJoinPicker = ({ teams, excludeIds = [], myName, onJoin, busy }) => {
     const [teamId, setTeamId] = useState('');
     const options = useMemo(() => teams
-        .filter(t => !t.user_id_2 && t.id !== myTeamId)
+        .filter(t => !t.user_id_2 && !excludeIds.includes(t.id))
         .map(t => ({ ...t, mine: pairMentions(t, myName) }))
-        .sort((a, b) => (Number(b.mine) - Number(a.mine)) || a.name.localeCompare(b.name)), [teams, myTeamId, myName]);
+        .sort((a, b) => (Number(b.mine) - Number(a.mine)) || a.name.localeCompare(b.name)), [teams, excludeIds, myName]);
     if (options.length === 0) return (
         <p className="text-xs" style={{ color: 'var(--text-3)' }}>Ahora mismo no hay ninguna pareja esperando a su segundo jugador. Puede que tu pareja aún no se haya apuntado.</p>
     );
@@ -769,7 +780,7 @@ const usePadelPairActions = (showConfirm) => {
             title: 'Unirme a esta pareja',
             message: `Vas a pedir unirte a "${team.name}". ¿Es tu pareja?\n\n`
                 + (byMonitors ? 'Esta pareja la dieron de alta los monitores: serán ellos quienes lo confirmen.' : 'A quien creó la pareja le llega un aviso para confirmar que eres tú. En cuanto acepte, veréis los dos lo mismo.')
-                + (replaceOwn ? '\n\nCuando te acepten, la pareja que creaste tú se borra (solo si todavía no tiene partidos).' : ''),
+                + (replaceOwn ? '\n\nSi es la misma pareja que creaste tú, cuando te acepten quedaréis en una sola. Si es otra distinta (juegas en dos grupos), tendrás las dos.' : ''),
             confirmText: 'Sí, es mi pareja', variant: 'info'
         });
         if (!ok) return;
@@ -781,14 +792,14 @@ const usePadelPairActions = (showConfirm) => {
             cancelText: null, variant: 'info'
         });
     }, 'No se pudo enviar la solicitud');
-    const create = (partnerName) => run(async () => {
+    const create = (partnerName, { second = false } = {}) => run(async () => {
         const res = await createMyPair(partnerName);
         const st = res?.status;
         if (st === 'requested') showConfirm({ title: 'Tu pareja ya estaba apuntada', message: 'Vuestra pareja ya existe: le hemos pedido a quien la creó que confirme que eres tú. Cuando acepte, lo verás aquí.', cancelText: null, variant: 'info' });
         else if (st === 'ambiguous') showConfirm({ title: 'Hay varias parejas parecidas', message: 'Hay más de una pareja que encaja con esos nombres. Búscala en la lista de arriba y pulsa "Es mi pareja".', cancelText: null, variant: 'warning' });
         else if (st === 'full') showConfirm({ title: 'Esa pareja ya está completa', message: 'Esa pareja ya tiene sus dos cuentas. ¿Te apuntaste antes con otro correo? Entra con ese. Si no, habla con los monitores.', cancelText: null, variant: 'warning' });
         else if (st === 'linked') showConfirm({ title: 'Hecho', message: 'Los monitores ya habían dado de alta vuestra pareja: tu cuenta queda unida a ella. Ya puedes marcar vuestras horas.', cancelText: null, variant: 'info' });
-        else showConfirm({ title: 'Pareja creada', message: 'Ya puedes marcar las horas a las que podéis jugar los dos. Los monitores os pondrán en un grupo.', cancelText: null, variant: 'info' });
+        else showConfirm({ title: second ? 'Segunda pareja creada' : 'Pareja creada', message: second ? 'Ya tienes tus dos parejas. Arriba, en Mi Disponibilidad, eliges de cuál marcas las horas: cada una tiene las suyas. Los monitores pondrán cada pareja en su grupo.' : 'Ya puedes marcar las horas a las que podéis jugar los dos. Los monitores os pondrán en un grupo.', cancelText: null, variant: 'info' });
         return res;
     }, 'No se pudo crear la pareja');
     const respond = (req, accept) => run(async () => {
@@ -826,25 +837,33 @@ const PadelMyRequest = ({ request, busy, onCancel }) => (
 );
 
 // Cuenta SIN pareja de pádel: unirse a la que ya creó su compañero/a, o crearla
-const PadelPairSetup = ({ teams, showConfirm }) => {
+const PadelPairSetup = ({ teams, showConfirm, second = false }) => {
     const { pairRequests } = useData();
     const { user } = useAuth();
     const { busy, join, create, cancel } = usePadelPairActions(showConfirm);
     const [partner, setPartner] = useState('');
     const myName = user?.full_name || user?.name || '';
     const myRequest = (pairRequests || []).find(r => r.user_id === user?.id);
-    // Parejas con sitio que me nombran: si hay una sola, es casi seguro la mía
-    const suggested = useMemo(() => teams.filter(t => !t.user_id_2 && pairMentions(t, myName)), [teams, myName]);
-    const fullMine = useMemo(() => teams.find(t => t.user_id && t.user_id_2 && pairMentions(t, myName)), [teams, myName]);
+    const mineIds = useMemo(() => teams.filter(t => isMyTeam(t, user?.id)).map(t => t.id), [teams, user?.id]);
+    const myTeamsHere = useMemo(() => teams.filter(t => isMyTeam(t, user?.id)), [teams, user?.id]);
+    // Parejas con sitio que me nombran (y que no son ya mías ni la misma que ya tengo)
+    const suggested = useMemo(() => teams.filter(t => !t.user_id_2 && !isMyTeam(t, user?.id) && pairMentions(t, myName)
+        && !myTeamsHere.some(m => samePair(m, t))), [teams, myName, user?.id, myTeamsHere]);
+    const fullMine = useMemo(() => teams.find(t => t.user_id && t.user_id_2 && !isMyTeam(t, user?.id) && pairMentions(t, myName)), [teams, myName, user?.id]);
     return (
-        <div className="w-full mt-6 space-y-4 animate-in fade-in zoom-in" style={{ maxWidth: '32rem', marginLeft: 'auto', marginRight: 'auto' }}>
-            <div className="p-5 rounded-2xl text-center" style={pairBox}>
+        <div className={second ? 'w-full space-y-3' : 'w-full mt-6 space-y-4 animate-in fade-in zoom-in'} style={second ? undefined : { maxWidth: '32rem', marginLeft: 'auto', marginRight: 'auto' }}>
+            {second ? (
+                <div className="p-4 rounded-2xl" style={pairBox}>
+                    <p className="font-bold text-white text-sm">Añadir mi otra pareja</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>Para quien juega en dos grupos con dos parejas distintas (máximo dos). Cada pareja tiene sus horas, sus partidos y sus avisos, y los monitores la ponen en su grupo.</p>
+                </div>
+            ) : <div className="p-5 rounded-2xl text-center" style={pairBox}>
                 <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(0,212,255,0.1)', color: 'var(--cyan)' }}>
                     <Users size={28} />
                 </div>
                 <h2 className="text-xl font-bold text-white mb-1">¿Juegas la liga de pádel?</h2>
                 <p className="text-sm" style={{ color: 'var(--text-2)' }}>Tu cuenta todavía no está en ninguna pareja de pádel. Podéis tener la app los dos y veréis lo mismo.</p>
-            </div>
+            </div>}
 
             {myRequest && <PadelMyRequest request={myRequest} busy={busy} onCancel={() => cancel(myRequest)} />}
 
@@ -866,7 +885,7 @@ const PadelPairSetup = ({ teams, showConfirm }) => {
             {!myRequest && <div className="p-5 rounded-2xl" style={pairBox}>
                 <p className="font-bold text-white text-sm mb-1">Mi pareja ya está apuntada</p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-2)' }}>Búscala en la lista. A quien creó la pareja le llega un aviso para confirmar que eres tú.</p>
-                <PadelJoinPicker teams={teams} myTeamId={null} myName={myName} onJoin={(t) => join(t)} busy={busy} />
+                <PadelJoinPicker teams={teams} excludeIds={mineIds} myName={myName} onJoin={(t) => join(t)} busy={busy} />
             </div>}
 
             {!myRequest && <div className="p-5 rounded-2xl" style={pairBox}>
@@ -874,12 +893,12 @@ const PadelPairSetup = ({ teams, showConfirm }) => {
                 <p className="text-xs mb-3" style={{ color: 'var(--text-2)' }}>Escribe el nombre y el apellido de tu compañero o compañera. Podrás marcar las horas ya; tu pareja se unirá cuando quiera con su cuenta.</p>
                 <div className="flex flex-col sm:flex-row gap-2">
                     <input value={partner} onChange={e => setPartner(e.target.value)} maxLength={80} placeholder="Nombre y apellido de tu pareja" className="cyber-input flex-1 px-3 py-2.5 rounded-lg text-sm" aria-label="Nombre y apellido de tu pareja" />
-                    <Button onClick={async () => { const res = await create(partner); if (res && res.status !== 'ambiguous' && res.status !== 'full') setPartner(''); }} disabled={busy || partner.trim().length < 3} className="text-sm py-2">{busy ? 'Un momento...' : 'Crear mi pareja'}</Button>
+                    <Button onClick={async () => { const res = await create(partner, { second }); if (res && res.status !== 'ambiguous' && res.status !== 'full') setPartner(''); }} disabled={busy || partner.trim().length < 3} className="text-sm py-2">{busy ? 'Un momento...' : (second ? 'Crear mi otra pareja' : 'Crear mi pareja')}</Button>
                 </div>
             </div>}
             {myRequest && <p className="text-xs text-center" style={{ color: 'var(--text-3)' }}>¿No era esa pareja? Cancela la solicitud y podrás elegir otra o crear la tuya.</p>}
 
-            <p className="text-xs text-center" style={{ color: 'var(--text-3)' }}>¿Solo juegas tenis? Aquí no tienes que hacer nada: puedes ver el ranking y los partidos de pádel, o volver a Tenis.</p>
+            {!second && <p className="text-xs text-center" style={{ color: 'var(--text-3)' }}>¿Solo juegas tenis? Aquí no tienes que hacer nada: puedes ver el ranking y los partidos de pádel, o volver a Tenis.</p>}
         </div>
     );
 };
@@ -894,7 +913,9 @@ const PadelPairCard = ({ team, teams, showConfirm }) => {
     const complete = !!(team.user_id && team.user_id_2);
     const iAmSecond = team.user_id_2 === user?.id;
     const incoming = (pairRequests || []).filter(r => r.team_id === team.id && r.user_id !== user?.id);
-    const myRequest = (pairRequests || []).find(r => r.user_id === user?.id);
+    // Aquí solo se enseña la solicitud para juntar ESTA pareja repetida; la de una segunda pareja
+    // distinta se ve en "Añadir mi otra pareja".
+    const myRequest = (pairRequests || []).find(r => r.user_id === user?.id && r.team && samePair(r.team, team));
     // El nombre de mi pareja tal como figura en la ficha (la mitad que no soy yo)
     const parts = pairParts(team.name);
     const partnerLabel = parts.length === 2 ? (looseNameMatch(parts[0], myName) ? parts[1] : looseNameMatch(parts[1], myName) ? parts[0] : null) : null;
@@ -902,9 +923,9 @@ const PadelPairCard = ({ team, teams, showConfirm }) => {
     // Solo se propone si hay UNA candidata: con varias, o con un tocayo, no se señala a nadie.
     const duplicate = useMemo(() => {
         if (complete || iAmSecond) return null;
-        const dups = teams.filter(t => t.id !== team.id && t.user_id && !t.user_id_2 && pairMentions(t, myName));
+        const dups = teams.filter(t => t.id !== team.id && t.user_id && !t.user_id_2 && !isMyTeam(t, user?.id) && samePair(t, team));
         return dups.length === 1 ? dups[0] : null;
-    }, [teams, team.id, complete, iAmSecond, myName]);
+    }, [teams, team, complete, iAmSecond, user?.id]);
     // Una pareja con partidos no se puede borrar para juntarla con otra: tiene que pedirlo el otro
     const ownHasMatches = (team.matchesPlayed || 0) > 0 || (data?.matches || []).some(m => m.team1_id === team.id || m.team2_id === team.id);
     return (
@@ -970,8 +991,8 @@ const PadelPairCard = ({ team, teams, showConfirm }) => {
                     </div>
                     {showJoin && !complete && !myRequest && !ownHasMatches && (
                         <div className="mt-3">
-                            <p className="text-xs mb-2" style={{ color: 'var(--text-2)' }}>Elige la pareja que creó tu compañero o compañera. Cuando te acepte, la que creaste tú se borra (solo si todavía no tiene partidos).</p>
-                            <PadelJoinPicker teams={teams} myTeamId={team.id} myName={myName} onJoin={(t) => join(t, { replaceOwn: true })} busy={busy} />
+                            <p className="text-xs mb-2" style={{ color: 'var(--text-2)' }}>Elige la pareja que creó tu compañero o compañera. Si es la misma que la tuya, al aceptarte quedaréis en una sola.</p>
+                            <PadelJoinPicker teams={teams} excludeIds={teams.filter(t => isMyTeam(t, user?.id)).map(t => t.id)} myName={myName} onJoin={(t) => join(t, { replaceOwn: true })} busy={busy} />
                         </div>
                     )}
                 </div>
@@ -989,22 +1010,36 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
     const isLocked = appSettings?.availability_locked;
     const deadlineLabel = appSettings?.availability_deadline_label;
 
-    // Buscar equipo vinculado al usuario autenticado
-    const linkedTeam = useMemo(() => {
-        if (!user?.id || !teams.length) return null;
-        return teams.find(t => t.user_id === user.id || t.user_id_2 === user.id) || null;
+    // Fichas del usuario. En pádel pueden ser DOS parejas (dos grupos distintos)
+    const myTeams = useMemo(() => {
+        if (!user?.id || !teams.length) return [];
+        return teams.filter(t => isMyTeam(t, user.id)).sort((a, b) => a.id - b.id);
     }, [user?.id, teams]);
+    const linkedTeam = myTeams.find(t => String(t.id) === myTeamId) || myTeams[0] || null;
+    const [showSecond, setShowSecond] = useState(false);
+    const { pairRequests } = useData();
+    const myPendingRequest = (pairRequests || []).find(r => r.user_id === user?.id);
 
-    // Auto-seleccionar equipo vinculado al usuario
+    // Si la ficha elegida ya no es mía (o aún no hay ninguna elegida), se coge la primera
     useEffect(() => {
-        if (linkedTeam) {
-            const idStr = String(linkedTeam.id);
-            if (myTeamId !== idStr) {
-                setMyTeamId(idStr);
-                setSelectedAvailability(linkedTeam.availability || []);
-            }
+        if (myTeams.length === 0) return;
+        if (!myTeams.some(t => String(t.id) === myTeamId)) {
+            setMyTeamId(String(myTeams[0].id));
+            setSelectedAvailability(myTeams[0].availability || []);
+            setHasUnsavedChanges(false);
         }
-    }, [linkedTeam]);
+    }, [myTeams, myTeamId]);
+
+    const switchTeam = async (t) => {
+        if (String(t.id) === myTeamId) return;
+        if (hasUnsavedChanges) {
+            const ok = await showConfirm({ title: 'Horas sin guardar', message: 'Has cambiado horas de esta pareja y no las has guardado. Si cambias de pareja, se pierden.', confirmText: 'Cambiar sin guardar', variant: 'warning' });
+            if (!ok) return;
+        }
+        setMyTeamId(String(t.id));
+        setSelectedAvailability(t.availability || []);
+        setHasUnsavedChanges(false);
+    };
 
     useEffect(() => {
         if (myTeamId) {
@@ -1095,6 +1130,24 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
 
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+            {/* Pádel con dos parejas: de cuál se marcan las horas */}
+            {sport === 'padel' && myTeams.length > 1 && (
+                <div className="p-3 rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)' }}>
+                    <p className="text-xs mb-2" style={{ color: 'var(--text-2)' }}>Tienes dos parejas. Elige de cuál quieres ver y marcar las horas:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {myTeams.map(t => {
+                            const on = String(t.id) === myTeamId;
+                            return (
+                                <button key={t.id} onClick={() => switchTeam(t)} className="p-3 rounded-xl text-left transition-all"
+                                    style={on ? { background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.5)' } : { background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                                    <p className="text-sm font-bold text-white truncate">{t.name}</p>
+                                    <p className="text-[11px]" style={{ color: on ? 'var(--cyan)' : 'var(--text-3)' }}>{t.group ? `Grupo ${t.group}` : 'Sin grupo todavía'} · {(t.availability || []).length} hora{(t.availability || []).length !== 1 ? 's' : ''}</p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
             {/* Deadline banner */}
             {isLocked && (
                 <div className="p-4 rounded-xl flex items-center gap-3" style={{ background: 'rgba(229,57,53,0.12)', border: '1px solid rgba(229,57,53,0.4)' }}>
@@ -1137,6 +1190,23 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
 
             {/* Pádel: quién está unido a la pareja */}
             {sport === 'padel' && team && <PadelPairCard team={team} teams={teams} showConfirm={showConfirm} />}
+
+            {/* Pádel: segunda pareja (quien juega en dos grupos) */}
+            {sport === 'padel' && myTeams.length === 1 && (() => {
+                const pendingOther = !!myPendingRequest && !(myPendingRequest.team && samePair(myPendingRequest.team, myTeams[0]));
+                const open = showSecond || pendingOther;
+                return (
+                    <div className="space-y-3">
+                        {!open && (
+                            <button onClick={() => setShowSecond(true)} className="w-full p-3 rounded-2xl text-left text-sm flex items-center gap-2" style={{ background: 'rgba(0,212,255,0.06)', border: '1px dashed rgba(0,212,255,0.35)', color: 'var(--cyan)' }}>
+                                <Plus size={16} /> ¿Juegas también en otro grupo con otra pareja? Añádela aquí
+                            </button>
+                        )}
+                        {open && <PadelPairSetup teams={teams} showConfirm={showConfirm} second />}
+                        {open && !pendingOther && <button onClick={() => setShowSecond(false)} className="text-xs underline" style={{ color: 'var(--text-3)' }}>Cerrar</button>}
+                    </div>
+                );
+            })()}
 
             {/* No puedo jugar esta semana */}
             <div className="p-4 rounded-2xl" style={{ background: 'var(--bg-card)', border: team?.week_off ? '1px solid rgba(229,57,53,0.5)' : '1px solid var(--border)' }}>
@@ -1207,15 +1277,15 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
 const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, publishSchedule, discardDrafts, onChatClick, isTennis, appSettings, updateAppSettings, showConfirm }) => {
     const { user } = useAuth();
     // Equipo del usuario logueado (para resaltar "Tu partido" y ponerlo el primero)
-    const myTeamId = useMemo(() => (user?.id && (teams || []).find(t => t.user_id === user.id || t.user_id_2 === user.id)?.id) || null, [teams, user?.id]);
+    const myTeamIds = useMemo(() => new Set((teams || []).filter(t => isMyTeam(t, user?.id)).map(t => t.id)), [teams, user?.id]);
     // Los borradores (published=false) solo los ve el admin. La BD ya los oculta a los
     // jugadores; el filtro aquí cubre el modo "Ver como Jugador".
     const activeMatches = useMemo(() => {
         const list = matches.filter(m => !m.completed && (isAdmin || m.published));
-        if (!myTeamId) return list;
-        const isMine = (m) => (m.t1?.id === myTeamId || m.t2?.id === myTeamId) ? 1 : 0;
+        if (myTeamIds.size === 0) return list;
+        const isMine = (m) => (myTeamIds.has(m.t1?.id) || myTeamIds.has(m.t2?.id)) ? 1 : 0;
         return [...list].sort((a, b) => isMine(b) - isMine(a));
-    }, [matches, myTeamId, isAdmin]);
+    }, [matches, myTeamIds, isAdmin]);
     const drafts = useMemo(() => matches.filter(m => !m.completed && !m.published), [matches]);
     const label = isTennis ? 'jugadores' : 'parejas';
 
@@ -1472,7 +1542,7 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                 <div className="grid gap-4 md:grid-cols-2">
                     {activeMatches.map(match => {
                         const slotDetails = currentSlots.find(s => s.id === match.slot) || parseSlotId(match.slot);
-                        const mine = !!myTeamId && (match.t1?.id === myTeamId || match.t2?.id === myTeamId);
+                        const mine = myTeamIds.has(match.t1?.id) || myTeamIds.has(match.t2?.id);
                         return (
                             <Card key={match.id} className={`flex flex-col overflow-hidden transition-all`} style={{ borderLeft: `3px solid ${match.postponed ? '#F59E0B' : '#E53935'}` }}>
                                 <div className="flex flex-row h-full min-w-0">
@@ -2480,9 +2550,24 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             const byGroup = new Map(groupOrder.map(g => [g, []]));
             possibleMatchups.sort((a, b) => a.difficulty - b.difficulty).forEach(m => { byGroup.get(m.group)?.push(m); });
             const assignedPerSlot = {};
+            // Pádel: quien juega en dos parejas no puede tener dos partidos a la misma hora.
+            // Se compara por cuenta y por nombre (nombre y apellido, al menos dos palabras).
+            const teamById = new Map(teams.map(t => [t.id, t]));
+            const peopleOf = (t) => ({ ids: [t?.user_id, t?.user_id_2].filter(Boolean), names: pairParts(t?.name).filter(n => nameTokens(n).length >= 2) });
+            const sharePerson = (a, b) => {
+                if (!a || !b || a.id === b.id) return false;
+                const pa = peopleOf(a), pb = peopleOf(b);
+                return pa.ids.some(id => pb.ids.includes(id)) || pa.names.some(x => pb.names.some(y => looseNameMatch(x, y)));
+            };
+            const teamsAtSlot = {};
+            if (!isTennis) baseMatches.forEach(m => {
+                if (m.completed || m.postponed) return;
+                (teamsAtSlot[m.slot] = teamsAtSlot[m.slot] || []).push(teamById.get(m.t1?.id), teamById.get(m.t2?.id));
+            });
+            const clashes = (match, slot) => !isTennis && (teamsAtSlot[slot] || []).some(o => sharePerson(o, match.t1) || sharePerson(o, match.t2));
             const tryPlace = (match) => {
                 if (scheduledTeamIds.has(match.t1.id) || scheduledTeamIds.has(match.t2.id)) return false;
-                const finalSlot = match.validSlots.find(slot => noCourtsConfig || (weeklyCourts[slot] || 0) > 0);
+                const finalSlot = match.validSlots.find(slot => (noCourtsConfig || (weeklyCourts[slot] || 0) > 0) && !clashes(match, slot));
                 if (!finalSlot) return false;
                 const n = (assignedPerSlot[finalSlot] = (assignedPerSlot[finalSlot] || 0) + 1);
                 schedule.push({
@@ -2492,6 +2577,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 });
                 scheduledTeamIds.add(match.t1.id);
                 scheduledTeamIds.add(match.t2.id);
+                (teamsAtSlot[finalSlot] = teamsAtSlot[finalSlot] || []).push(match.t1, match.t2);
                 if (!noCourtsConfig) weeklyCourts[finalSlot]--;
                 return true;
             };

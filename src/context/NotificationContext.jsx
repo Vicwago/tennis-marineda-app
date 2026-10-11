@@ -85,11 +85,12 @@ export const NotificationProvider = ({ children }) => {
 
     const markAsRead = async (id) => {
         try {
-            await supabase
+            const { error } = await supabase
                 .from('notifications')
                 .update({ is_read: true })
                 .eq('id', id)
                 .eq('user_id', user.id);
+            if (error) throw error;
 
             setNotifications(prev =>
                 prev.map(n => n.id === id ? { ...n, is_read: true } : n)
@@ -100,12 +101,14 @@ export const NotificationProvider = ({ children }) => {
     };
 
     const markAllRead = async () => {
+        if (!user?.id) return;
         try {
-            await supabase
+            const { error } = await supabase
                 .from('notifications')
                 .update({ is_read: true })
                 .eq('user_id', user.id)
                 .eq('is_read', false);
+            if (error) throw error;
 
             setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
         } catch (err) {

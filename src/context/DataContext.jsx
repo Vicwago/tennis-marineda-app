@@ -1219,15 +1219,12 @@ export const DataProvider = ({ children }) => {
     }, []);
 
     // Asignar / cambiar el grupo de un jugador (solo admin — protegido por trigger en BD)
+    // Lanza el error (p. ej. las dos parejas de una persona en el mismo grupo): quien llama lo enseña
     const updateTeamGroup = useCallback(async (teamId, group) => {
-        try {
-            const value = group && group.trim() ? group.trim() : null;
-            const { error } = await supabase.from('teams').update({ group_name: value }).eq('id', teamId);
-            if (error) throw error;
-            setTeams(prev => prev.map(t => t.id === teamId ? { ...t, group_name: value, group: value } : t));
-        } catch (error) {
-            console.error('Error updating team group:', error);
-        }
+        const value = group && group.trim() ? group.trim() : null;
+        const { error } = await supabase.from('teams').update({ group_name: value }).eq('id', teamId);
+        if (error) throw new Error(error.message);
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, group_name: value, group: value } : t));
     }, []);
 
     // Ajustes por ámbito (deporte/categoría). Las listas se guardan como JSON.
