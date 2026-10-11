@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 // xlsx se importa bajo demanda dentro de handleFileUpload (evita ~400 KB en la carga inicial)
-import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy } from 'lucide-react';
+import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
 import { useData, nextDateForSlot, generateSlots, parseSlotId } from '../context/DataContext';
@@ -340,6 +340,27 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     );
 });
 
+// ─── Lupa: buscar jugadores / parejas por nombre ─────────────────────────────
+const normSearch = (txt) => (txt || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const matchesSearch = (name, query) => {
+    const words = normSearch(query).split(/\s+/).filter(Boolean);
+    if (words.length === 0) return true;
+    const target = normSearch(name);
+    return words.every(w => target.includes(w));
+};
+const SearchBox = ({ value, onChange, placeholder }) => (
+    <div className="relative flex-1 min-w-[10rem]">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-3)' }} />
+        <input type="text" inputMode="search" enterKeyHint="search" autoComplete="off" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder}
+            className="cyber-input w-full text-sm rounded-lg py-2.5 pl-9 pr-8" />
+        {value && (
+            <button onClick={() => onChange('')} aria-label="Borrar búsqueda" className="absolute right-2 top-1/2 -translate-y-1/2 p-1" style={{ color: 'var(--text-3)' }}>
+                <X size={14} />
+            </button>
+        )}
+    </div>
+);
+
 const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
     // ── Pádel: solicitudes de unión pendientes (las puede resolver también un monitor) ──
     const { pairRequests, respondPairRequest, renameTeam } = useData();
@@ -406,6 +427,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
         catch (e) { showConfirm({ title: 'No se pudo cambiar', message: e?.message || String(e), cancelText: null, variant: 'danger' }); }
     };
     const [selectedGroup, setSelectedGroup] = useState('Todos');
+    const [query, setQuery] = useState('');
     const [addOpen, setAddOpen] = useState(false);
     const [addName, setAddName] = useState('');
     const [addGroup, setAddGroup] = useState('');
@@ -419,9 +441,11 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
     };
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
+    // Con algo escrito en la lupa se busca en TODOS los grupos
     const filteredTeams = useMemo(
-        () => selectedGroup === 'Todos' ? teams : teams.filter(t => t.group === selectedGroup),
-        [teams, selectedGroup]
+        () => query.trim() ? teams.filter(t => matchesSearch(t.name, query))
+            : selectedGroup === 'Todos' ? teams : teams.filter(t => t.group === selectedGroup),
+        [teams, selectedGroup, query]
     );
 
     return (
@@ -434,11 +458,15 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                     <h2 className="font-bold text-xl text-white">{isTennis ? 'Jugadores' : 'Parejas'}</h2>
                 </div>
 
-                <div className="flex gap-3 w-full md:w-auto">
+                <div className="flex flex-wrap gap-3 w-full md:w-auto">
+                    <SearchBox value={query} onChange={setQuery} placeholder={isTennis ? 'Buscar jugador' : 'Buscar pareja o jugador'} />
                     <select
                         value={selectedGroup}
                         onChange={(e) => setSelectedGroup(e.target.value)}
+                        disabled={!!query.trim()}
+                        title={query.trim() ? 'Buscando en todos los grupos' : undefined}
                         className="cyber-input text-sm rounded-lg p-2.5 flex-1 md:w-48"
+                        style={query.trim() ? { opacity: 0.5 } : undefined}
                     >
                         {groups.map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
@@ -714,6 +742,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                     <div className="col-span-full text-center py-12" style={{ color: 'var(--text-3)' }}>
                         {teams.length === 0
                             ? <p>No hay jugadores registrados aún.</p>
+                            : query.trim() ? <p>Nadie coincide con "{query.trim()}".</p>
                             : <p>No hay jugadores en el grupo seleccionado.</p>
                         }
                     </div>
@@ -2268,6 +2297,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     const [activeTab, setActiveTab] = useState('home'); // home, schedule, teams, standings, courts, availability, history, stats, calendar
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [activeStandingsGroup, setActiveStandingsGroup] = useState(null);
+    const [rankQuery, setRankQuery] = useState('');
+    const [rankHighlight, setRankHighlight] = useState(null);
     const [sidebarExpandedSport, setSidebarExpandedSport] = useState(null);
 
     // Overlay State
@@ -2845,18 +2876,51 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     const color = GROUP_COLORS[colorIdx];
                     // Desempate: puntos → victorias → menos partidos jugados → nombre
                     const winsOf = (id) => matches.filter(m => m.completed && m.winner_id === id).length;
-                    const groupTeams = teams.filter(t => (t.group || 'General') === curGroup).sort((a, b) =>
-                        (b.points - a.points) || (winsOf(b.id) - winsOf(a.id)) || ((a.matchesPlayed || 0) - (b.matchesPlayed || 0)) || a.name.localeCompare(b.name)
-                    );
+                    const rankSort = (a, b) => (b.points - a.points) || (winsOf(b.id) - winsOf(a.id)) || ((a.matchesPlayed || 0) - (b.matchesPlayed || 0)) || a.name.localeCompare(b.name);
+                    const groupTeams = teams.filter(t => (t.group || 'General') === curGroup).sort(rankSort);
+                    // Lupa: en qué grupo y en qué puesto está cada uno
+                    const found = rankQuery.trim() ? teams.filter(t => matchesSearch(t.name, rankQuery)).slice(0, 20).map(t => {
+                        const g = t.group || 'General';
+                        const pos = teams.filter(x => (x.group || 'General') === g).sort(rankSort).findIndex(x => x.id === t.id) + 1;
+                        return { t, g, pos };
+                    }) : [];
+                    const goTo = (t, g) => {
+                        setActiveStandingsGroup(g); setRankHighlight(t.id); setRankQuery('');
+                        setTimeout(() => {
+                            const el = [...document.querySelectorAll(`[data-rank-row="${t.id}"]`)].find(x => x.offsetParent !== null);
+                            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 80);
+                    };
+                    const rowBg = (t, i) => t.id === rankHighlight ? 'rgba(0,212,255,0.16)' : (i < 3 ? color.bg : '');
                     return (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            <SearchBox value={rankQuery} onChange={setRankQuery} placeholder={isTennis ? 'Buscar jugador en el ranking' : 'Buscar pareja o jugador en el ranking'} />
+                            {rankQuery.trim() && (
+                                <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)' }}>
+                                    {found.length === 0 ? (
+                                        <p className="p-4 text-sm" style={{ color: 'var(--text-3)' }}>Nadie coincide con "{rankQuery.trim()}".</p>
+                                    ) : found.map(({ t, g, pos }) => (
+                                        <button key={t.id} onClick={() => goTo(t, g)} className="w-full p-3 flex items-center gap-3 text-left transition-colors"
+                                            style={{ borderBottom: '1px solid var(--border)' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,212,255,0.06)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = ''}>
+                                            <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-2)' }}>{pos}º</span>
+                                            <span className="flex-1 min-w-0">
+                                                <span className="block text-sm font-medium text-white truncate">{t.name}</span>
+                                                <span className="block text-xs" style={{ color: 'var(--text-3)' }}>{g === 'General' ? 'Sin grupo' : `Grupo ${g}`} · {t.points} pts · {t.matchesPlayed || 0} PJ</span>
+                                            </span>
+                                            <span className="text-xs shrink-0" style={{ color: 'var(--cyan)' }}>Ver</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             {/* Group tabs */}
                             <div className="flex flex-wrap gap-2">
                                 {groups.map((g, i) => {
                                     const c = GROUP_COLORS[i % GROUP_COLORS.length];
                                     const isAct = g === curGroup;
                                     return (
-                                        <button key={g} onClick={() => setActiveStandingsGroup(g)}
+                                        <button key={g} onClick={() => { setActiveStandingsGroup(g); setRankHighlight(null); }}
                                             className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
                                             style={isAct ? { background: c.tabBg, border: `1px solid ${c.accent}`, color: 'white' } : { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-3)' }}>
                                             {g}
@@ -2906,7 +2970,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 {/* Mobile */}
                                 <div className="block md:hidden">
                                     {groupTeams.map((t, i) => (
-                                        <div key={t.id} className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)', background: i < 3 ? color.bg : '' }}>
+                                        <div key={t.id} data-rank-row={t.id} className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)', background: rowBg(t, i) }}>
                                             <div className="flex items-center gap-3">
                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i === 0 ? 'bg-yellow-400 text-black' : i === 1 ? 'bg-slate-500 text-white' : i === 2 ? 'bg-amber-700 text-white' : ''}`}
                                                     style={i > 2 ? { background: 'rgba(255,255,255,0.08)', color: 'var(--text-2)' } : {}}>
@@ -2936,9 +3000,9 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     </thead>
                                     <tbody>
                                         {groupTeams.map((t, i) => (
-                                            <tr key={t.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', background: i < 3 ? color.bg : '' }}
+                                            <tr key={t.id} data-rank-row={t.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', background: rowBg(t, i) }}
                                                 onMouseEnter={e => e.currentTarget.style.background = color.bg}
-                                                onMouseLeave={e => e.currentTarget.style.background = i < 3 ? color.bg : ''}>
+                                                onMouseLeave={e => e.currentTarget.style.background = rowBg(t, i)}>
                                                 <td className="p-4 text-center">
                                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm mx-auto ${i === 0 ? 'bg-yellow-400 text-black' : i === 1 ? 'bg-slate-500 text-white' : i === 2 ? 'bg-amber-700 text-white' : ''}`}
                                                         style={i > 2 ? { background: 'rgba(255,255,255,0.08)', color: 'var(--text-2)' } : {}}>
