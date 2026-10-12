@@ -2952,7 +2952,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     <Trophy style={{ color: color.accent }} size={20} />
                                     <h3 className="font-bold text-white">{curGroup}</h3>
                                     <span className="text-xs ml-auto" style={{ color: 'var(--text-3)' }}>{groupTeams.length} jugadores · Top 3 ascienden</span>
-                                    <button
+                                    {/* Solo monitores: la lista completa con nombres no se reparte fuera de la app (protección de datos) */}
+                                    {isAdmin && <button
                                         onClick={() => {
                                             const txt = `🏆 Clasificación ${isTennis ? 'Tenis' : 'Pádel'} — ${curGroup}\n(Escuela de Tenis Marineda)\n\n` +
                                                 groupTeams.map((t, i) => `${i + 1}. ${t.name} — ${t.points} pts (${t.matchesPlayed || 0} PJ)`).join('\n');
@@ -2965,7 +2966,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                         style={{ color: color.accent, border: `1px solid ${color.border}`, background: color.bg }}
                                     >
                                         📋 Copiar
-                                    </button>
+                                    </button>}
                                 </div>
                                 {/* Mobile */}
                                 <div className="block md:hidden">
@@ -3137,7 +3138,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     </div>
                     <div>
                         <h1 className="font-bold leading-none text-white">Escuela</h1>
-                        <span className="text-xs font-bold" style={{ color: 'var(--cyan)' }}>Marineda</span>
+                        <span className="text-xs font-bold brand-sub" style={{ color: 'var(--cyan)' }}>Marineda</span>
                     </div>
                 </div>
 
@@ -3365,7 +3366,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
                 {/* Mobile Header */}
                 <header className="md:hidden p-4 flex justify-between items-center sticky top-0 z-30"
-                    style={{ background: 'rgba(6,13,26,0.9)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)', paddingTop: 'calc(1rem + var(--sat))' }}>
+                    style={{ background: 'var(--bg-header)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)', paddingTop: 'calc(1rem + var(--sat))' }}>
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg p-1" style={{ background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.3)' }}>
                             <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
@@ -3449,7 +3450,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 {/* Top Bar (Contextual) */}
                 {sport && (
                     <div className="sticky top-0 z-10 px-3 md:px-6 py-2 md:py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
-                        style={{ background: 'rgba(6,13,26,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}>
+                        style={{ background: 'var(--bg-header)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}>
                         <div className="flex items-center gap-4">
                             <h2 className="text-lg font-bold text-white capitalize flex items-center gap-2">
                                 <span style={{ color: sport === 'padel' ? '#E53935' : '#FFC107' }}>

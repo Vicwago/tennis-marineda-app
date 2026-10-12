@@ -18,6 +18,7 @@
         --bg-deepest: #030811;
         --bg-deep:    #060d1a;
         --bg-nav:     #0a1628;
+        --bg-header:  rgba(6, 13, 26, 0.9);
         --bg-card:    rgba(13, 31, 56, 0.85);
         --bg-input:   rgba(6, 13, 26, 0.8);
 
@@ -238,6 +239,7 @@
         --bg-deepest: #edf2f7;
         --bg-deep:    #f4f8fc;
         --bg-nav:     #d4e4f5;
+        --bg-header:  rgba(244, 248, 252, 0.94);
         --bg-card:    #ffffff;
         --bg-input:   #f0f5fb;
         --border:     rgba(0, 0, 0, 0.12);
@@ -286,6 +288,8 @@
         background: rgba(0, 0, 0, 0.05) !important;
         color: var(--text-1) !important;
     }
+    /* "Marineda" bajo el logo: el cian no se lee sobre el azul claro de la barra lateral */
+    html.light .brand-sub { color: #0369a1 !important; }
     /* Texto blanco → texto oscuro en modo claro (excepto sobre fondos de color) */
     html.light .text-white {
         color: var(--text-1) !important;
