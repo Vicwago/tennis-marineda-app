@@ -2928,7 +2928,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     return (
                                         <button key={g} onClick={() => { setActiveStandingsGroup(g); setRankHighlight(null); }}
                                             className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
-                                            style={isAct ? { background: c.tabBg, border: `1px solid ${c.accent}`, color: 'white' } : { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-3)' }}>
+                                            style={isAct ? { background: c.tabBg, border: `1px solid ${c.accent}`, color: 'var(--text-1)' } : { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-3)' }}>
                                             {g}
                                         </button>
                                     );
@@ -2943,7 +2943,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                         </div>
                                         <div>
                                             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: color.accent }}>Líder — {curGroup}</span>
-                                            <h3 className="text-lg font-bold text-white">{groupTeams[0].name}</h3>
+                                            <h3 className="text-lg font-bold" style={{ color: 'var(--text-1)' }}>{groupTeams[0].name}</h3>
                                         </div>
                                         <div className="ml-auto text-right">
                                             <span className="block text-2xl font-bold" style={{ color: color.accent }}>{groupTeams[0].points}</span>
@@ -3510,7 +3510,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     onClick={() => setActiveTab('availability')}
                                     className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                     style={activeTab === 'availability'
-                                        ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                        ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                         : { color: 'var(--text-3)' }}
                                 >
                                     Mi Disponibilidad
@@ -3521,7 +3521,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 onClick={() => setActiveTab('schedule')}
                                 className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                 style={activeTab === 'schedule'
-                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                     : { color: 'var(--text-3)' }}
                             >
                                 Jornada
@@ -3531,7 +3531,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 onClick={() => setActiveTab('teams')}
                                 className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                 style={activeTab === 'teams'
-                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                     : { color: 'var(--text-3)' }}
                             >
                                 {isTennis ? 'Jugadores' : 'Parejas'}
@@ -3541,7 +3541,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 onClick={() => setActiveTab('standings')}
                                 className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                 style={activeTab === 'standings'
-                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                     : { color: 'var(--text-3)' }}
                             >
                                 Ranking
@@ -3551,7 +3551,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 onClick={() => setActiveTab('history')}
                                 className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                 style={activeTab === 'history'
-                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                     : { color: 'var(--text-3)' }}
                             >
                                 Historial
@@ -3561,7 +3561,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 onClick={() => setActiveTab('stats')}
                                 className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                 style={activeTab === 'stats'
-                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                     : { color: 'var(--text-3)' }}
                             >
                                 Estadísticas
@@ -3571,7 +3571,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 onClick={() => setActiveTab('calendar')}
                                 className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                 style={activeTab === 'calendar'
-                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                    ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                     : { color: 'var(--text-3)' }}
                             >
                                 Calendario
@@ -3582,7 +3582,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     onClick={() => setActiveTab('courts')}
                                     className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                                     style={activeTab === 'courts'
-                                        ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'white', border: '1px solid rgba(229,57,53,0.4)' }
+                                        ? { background: 'linear-gradient(135deg, rgba(229,57,53,0.3), rgba(229,57,53,0.15))', color: 'var(--text-1)', border: '1px solid rgba(229,57,53,0.4)' }
                                         : { color: 'var(--text-3)' }}
                                 >
                                     Pistas

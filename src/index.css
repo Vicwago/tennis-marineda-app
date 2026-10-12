@@ -247,6 +247,8 @@
         --text-1:     #0f172a;
         --text-2:     #334155;
         --text-3:     #64748b;
+        /* El cian de los textos y bordes, más oscuro: sobre fondo claro el original no se lee */
+        --cyan:       #0277bd;
     }
     html.light body {
         background-color: var(--bg-deep);
@@ -288,6 +290,16 @@
         background: rgba(0, 0, 0, 0.05) !important;
         color: var(--text-1) !important;
     }
+    /* Colores "neón" escritos directamente en los componentes: en modo claro, su versión oscura
+       (el navegador guarda el estilo como rgb(), por eso se buscan así). Solo cambia el texto. */
+    html.light [style*="color: rgb(0, 255, 135)"]   { color: #047857 !important; } /* verde  */
+    html.light [style*="color: rgb(76, 175, 80)"]   { color: #2e7d32 !important; } /* verde 2 */
+    html.light [style*="color: rgb(255, 193, 7)"]   { color: #a15c00 !important; } /* amarillo */
+    html.light [style*="color: rgb(253, 216, 53)"]  { color: #a15c00 !important; }
+    html.light [style*="color: rgb(255, 107, 107)"] { color: #c62828 !important; } /* rojo claro */
+    html.light [style*="color: rgb(255, 138, 128)"] { color: #c62828 !important; }
+    html.light [style*="color: rgb(118, 193, 255)"] { color: #1d4ed8 !important; } /* azul pie */
+    html.light [style*="color: rgb(0, 212, 255)"]   { color: #0277bd !important; } /* cian */
     /* "Marineda" bajo el logo: el cian no se lee sobre el azul claro de la barra lateral */
     html.light .brand-sub { color: #0369a1 !important; }
     /* Texto blanco → texto oscuro en modo claro (excepto sobre fondos de color) */
