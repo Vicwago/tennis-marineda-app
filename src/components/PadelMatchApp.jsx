@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 // xlsx se importa bajo demanda dentro de handleFileUpload (evita ~400 KB en la carga inicial)
-import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search } from 'lucide-react';
+import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search, BellRing } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
 import { useData, nextDateForSlot, generateSlots, parseSlotId } from '../context/DataContext';
@@ -12,6 +12,7 @@ import MatchChat from './MatchChat';
 import ConfirmDialog, { useConfirm } from './ConfirmDialog';
 import CreditFooter from './CreditFooter';
 import { BugReportModal, BugReportsAdminModal, countNewBugReports } from './BugReport';
+import { PushOptInCard, PushSettingsModal, BroadcastModal } from './PushNotifications';
 
 // --- UI Components ---
 const Card = ({ children, className = "" }) => (
@@ -2290,6 +2291,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     // "¿Algo falla?": formulario del jugador y lista de incidencias de los monitores
     const [showBugReport, setShowBugReport] = useState(false);
     const [showBugAdmin, setShowBugAdmin] = useState(false);
+    const [showPushSettings, setShowPushSettings] = useState(false);
+    const [showBroadcast, setShowBroadcast] = useState(false);
     const [newBugs, setNewBugs] = useState(0);
     const { unreadCount } = useNotifications();
 
@@ -2716,6 +2719,9 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                         )}
                     </div>
 
+                    {/* ── Avisos al móvil: hasta que este móvil los active ── */}
+                    <PushOptInCard />
+
                     {/* ── Pádel: alguien espera a que confirmes que es tu pareja ── */}
                     {(() => {
                         const mineToAnswer = (pairRequests || []).filter(r => r.team?.user_id === user?.id && r.user_id !== user?.id);
@@ -3115,6 +3121,19 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>Lo que mandan los jugadores desde "¿Algo falla?"</p>
                                 </div>
                             </button>
+                            <button
+                                onClick={() => { setShowProfilesModal(false); setShowBroadcast(true); }}
+                                className="w-full flex items-center gap-3 p-4 rounded-xl text-left transition-all"
+                                style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.25)', color: 'white' }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,212,255,0.12)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,212,255,0.06)'}
+                            >
+                                <BellRing size={26} style={{ color: 'var(--cyan)' }} />
+                                <div className="flex-1">
+                                    <p className="font-bold">Aviso a todos</p>
+                                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>Un mensaje a todas las cuentas: campana y móvil</p>
+                                </div>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -3126,6 +3145,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             {showBugReport && (
                 <BugReportModal onClose={() => setShowBugReport(false)} context={{ sport: sport || null, screen: `${sport || 'inicio'}/${sport ? activeTab : 'home'}` }} />
             )}
+            {showPushSettings && <PushSettingsModal onClose={() => setShowPushSettings(false)} />}
+            {showBroadcast && isRealAdmin && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
             {showBugAdmin && isRealAdmin && (
                 <BugReportsAdminModal onClose={() => { setShowBugAdmin(false); refreshBugCount(); }} onChanged={refreshBugCount} />
             )}
@@ -3329,6 +3350,13 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                             {previewAsPlayer ? '👤 Vista Jugador (activa)' : '🔧 Ver como Jugador'}
                         </button>
                     )}
+                    <button onClick={() => setShowPushSettings(true)}
+                        className="w-full flex items-center gap-2 justify-center px-4 py-2 rounded-lg transition-all text-sm mb-2"
+                        style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,212,255,0.14)'; e.currentTarget.style.color = 'var(--cyan)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,212,255,0.06)'; e.currentTarget.style.color = 'var(--text-2)'; }}>
+                        <BellRing size={16} /> Avisos al móvil
+                    </button>
                     <button onClick={() => (isRealAdmin ? setShowBugAdmin(true) : setShowBugReport(true))}
                         className="w-full flex items-center gap-2 justify-center px-4 py-2 rounded-lg transition-all text-sm mb-2"
                         style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
@@ -3438,7 +3466,10 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                                 </div>
                             </div>
 
-                            <button onClick={() => { setIsMobileMenuOpen(false); if (isRealAdmin) setShowBugAdmin(true); else setShowBugReport(true); }} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-4 flex items-center gap-2" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--cyan)' }}>
+                            <button onClick={() => { setIsMobileMenuOpen(false); setShowPushSettings(true); }} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-4 flex items-center gap-2" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--cyan)' }}>
+                                <BellRing size={16} /> Avisos al móvil
+                            </button>
+                            <button onClick={() => { setIsMobileMenuOpen(false); if (isRealAdmin) setShowBugAdmin(true); else setShowBugReport(true); }} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-2 flex items-center gap-2" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--cyan)' }}>
                                 <LifeBuoy size={16} /> {isRealAdmin ? `Incidencias${newBugs > 0 ? ` (${newBugs} nuevas)` : ''}` : '¿Algo falla? Cuéntanoslo'}
                             </button>
                             <button onClick={logout} className="w-full p-3.5 rounded-xl text-left font-bold text-sm mt-2" style={{ background: 'rgba(229,57,53,0.08)', border: '1px solid rgba(229,57,53,0.2)', color: '#ff6b6b' }}>Cerrar Sesión</button>

@@ -46,10 +46,13 @@
     <div id="root"></div>
     <!-- Limpiar Service Workers, caches obsoletos, y auto-actualizar si hay versión nueva -->
     <script>
-      // 1. Limpiar SW
+      // 1. Limpiar SW viejos (los de la app antigua). Se respeta el de los avisos al móvil.
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(regs) {
-          regs.forEach(function(r) { r.unregister(); });
+          regs.forEach(function(r) {
+            var w = r.active || r.waiting || r.installing;
+            if (!w || w.scriptURL.indexOf('/push-sw.js') === -1) r.unregister();
+          });
         });
       }
       // 2. Limpiar caches API
@@ -60,7 +63,7 @@
       }
       // 3. Auto-actualizar: comprobar si el HTML cargado es el más reciente
       (function() {
-        var BUILD_VERSION = 'v2026-10-12-1';
+        var BUILD_VERSION = 'v2026-10-12-2';
         window.__BUILD_VERSION = BUILD_VERSION;
         var vKey = 'app_version';
         var stored = localStorage.getItem(vKey);

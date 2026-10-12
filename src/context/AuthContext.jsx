@@ -163,6 +163,12 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = async () => {
+        // Este móvil deja de recibir los avisos de esta cuenta (antes de cerrar la sesión)
+        try {
+            const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : null;
+            const sub = reg ? await reg.pushManager?.getSubscription() : null;
+            if (sub) await Promise.race([supabase.rpc('push_unsubscribe', { p_endpoint: sub.endpoint }), new Promise(r => setTimeout(r, 2500))]);
+        } catch { /* sin conexión o sin avisos */ }
         setUser(null);
         // Revocar la sesión en el servidor ANTES de borrar los tokens locales
         // (antes se borraban primero y el refresh token seguía siendo válido).
