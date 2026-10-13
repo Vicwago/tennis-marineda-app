@@ -318,7 +318,9 @@
     .scroll-tabs-container {
         position: relative;
     }
+    /* Sin degradado: en un contenedor con scroll se movía con las pestañas y tapaba la activa */
     .scroll-tabs-container::after {
+        display: none;
         content: '';
         position: absolute;
         right: 0;

@@ -133,8 +133,8 @@ export function PushOptInCard() {
                         <>
                             <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>En iPhone, los avisos solo llegan si la app está instalada. Hazlo en 3 pasos (en Safari):</p>
                             <ol className="text-xs mt-2 space-y-1.5" style={{ color: 'var(--text-2)' }}>
-                                <li className="flex items-center gap-1.5">1. Pulsa <Share size={13} style={{ color: 'var(--cyan)' }} /> <b className="text-white">Compartir</b> (abajo en la pantalla).</li>
-                                <li className="flex items-center gap-1.5">2. Elige <PlusSquare size={13} style={{ color: 'var(--cyan)' }} /> <b className="text-white">Añadir a pantalla de inicio</b>.</li>
+                                <li>1. Pulsa <Share size={13} className="inline-block align-text-bottom mx-0.5" style={{ color: 'var(--cyan)' }} /> <b className="text-white">Compartir</b> (abajo en la pantalla).</li>
+                                <li>2. Elige <PlusSquare size={13} className="inline-block align-text-bottom mx-0.5" style={{ color: 'var(--cyan)' }} /> <b className="text-white">Añadir a pantalla de inicio</b>.</li>
                                 <li>3. Abre la app desde el icono nuevo y pulsa aquí <b className="text-white">Activar avisos</b>.</li>
                             </ol>
                         </>
@@ -187,8 +187,8 @@ export function PushSettingsModal({ onClose }) {
                 {status === 'ios-install' && (
                     <ol className="text-sm space-y-2" style={{ color: 'var(--text-2)' }}>
                         <li>En iPhone los avisos solo funcionan con la app instalada:</li>
-                        <li className="flex items-center gap-1.5">1. En Safari, pulsa <Share size={14} style={{ color: 'var(--cyan)' }} /> <b className="text-white">Compartir</b>.</li>
-                        <li className="flex items-center gap-1.5">2. <PlusSquare size={14} style={{ color: 'var(--cyan)' }} /> <b className="text-white">Añadir a pantalla de inicio</b>.</li>
+                        <li>1. En Safari, pulsa <Share size={14} className="inline-block align-text-bottom mx-0.5" style={{ color: 'var(--cyan)' }} /> <b className="text-white">Compartir</b>.</li>
+                        <li>2. <PlusSquare size={14} className="inline-block align-text-bottom mx-0.5" style={{ color: 'var(--cyan)' }} /> <b className="text-white">Añadir a pantalla de inicio</b>.</li>
                         <li>3. Abre la app desde ese icono y vuelve aquí para activar los avisos.</li>
                     </ol>
                 )}

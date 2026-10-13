@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { User, Lock, ArrowRight, Loader2, Mail, ArrowLeft, CheckCircle } from 'lucide-react';
+import { User, Lock, ArrowRight, Loader2, Mail, ArrowLeft, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import CreditFooter from './CreditFooter';
 
@@ -8,6 +8,7 @@ export default function Login({ onNavigateToRegister }) {
     const { login, resetPassword, verifyRecoveryCode } = useAuth();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [slowLoad, setSlowLoad] = useState(false);
@@ -285,13 +286,19 @@ export default function Login({ onNavigateToRegister }) {
                                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors"
                                     style={{ color: password ? 'var(--cyan)' : 'var(--text-3)' }} />
                                 <input
-                                    type="password"
+                                    type={showPassword ? 'text' : 'password'}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="cyber-input"
+                                    style={{ paddingRight: '2.75rem' }}
                                     placeholder="••••••••"
                                     autoComplete="current-password"
                                 />
+                                <button type="button" onClick={() => setShowPassword(v => !v)}
+                                    aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'} title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1" style={{ color: 'var(--text-3)' }}>
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
                             </div>
                         </div>
 
