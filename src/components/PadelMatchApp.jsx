@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from '
 import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search, BellRing } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
-import { useData, nextDateForSlot, generateSlots, parseSlotId } from '../context/DataContext';
+import { useData, generateSlots, parseSlotId, resolvePlayWeekStart, dateForSlotInWeek, formatWeekRange, toYMD } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { useNotifications } from '../context/NotificationContext';
@@ -1118,6 +1118,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const isLocked = appSettings?.availability_locked;
     const deadlineLabel = appSettings?.availability_deadline_label;
+    const playWeek = resolvePlayWeekStart(appSettings?.play_week_start);
 
     // Fichas del usuario. En pádel pueden ser DOS parejas (dos grupos distintos)
     const myTeams = useMemo(() => {
@@ -1347,12 +1348,15 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
             {/* Slots de disponibilidad */}
             {!team?.week_off && (
                 <div className="p-4 rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                    <h3 className="font-bold text-white mb-3 text-sm">{sport === 'padel' ? 'Horas a las que podéis jugar los dos' : 'Selecciona tus horarios disponibles'}</h3>
+                    <h3 className="font-bold text-white mb-1 text-sm">{sport === 'padel' ? 'Horas a las que podéis jugar los dos' : 'Selecciona tus horarios disponibles'}</h3>
+                    <p className="text-xs mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-2)' }}>
+                        <Calendar size={13} style={{ color: 'var(--cyan)' }} /> Semana <b className="text-white">{formatWeekRange(playWeek)}</b>
+                    </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                        {DAYS.map(day => (
+                        {DAYS.map((day, di) => (
                             <div key={day} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                                 <div className="p-2 font-bold text-white text-center text-xs" style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--border)' }}>
-                                    {day}
+                                    {day} {(() => { const d = new Date(playWeek); d.setDate(d.getDate() + di); return d.getDate(); })()}
                                 </div>
                                 <div className="p-2 grid grid-cols-2 gap-1.5">
                                     {(availabilitySlots || currentSlots).filter(s => s.day === day).map(slot => (
@@ -1607,6 +1611,23 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                         <p className="text-xs" style={{ color: 'var(--text-2)' }}>
                             Cruza {label} con horarios compatibles, respetando grupos, pistas y semana libre. La jornada nace en borrador: nadie la ve hasta que la publiques.
                         </p>
+                        {(() => {
+                            const wk = resolvePlayWeekStart(appSettings?.play_week_start);
+                            const move = async (days) => {
+                                const d = new Date(wk); d.setDate(d.getDate() + days);
+                                try { await updateAppSettings('play_week_start', toYMD(d)); }
+                                catch (e) { showConfirm({ title: 'No se pudo cambiar la semana', message: e?.message || String(e), cancelText: null, variant: 'warning' }); }
+                            };
+                            const thisMonday = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+                            return (
+                                <div className="flex items-center gap-2 mt-2 text-xs">
+                                    <Calendar size={14} style={{ color: 'var(--cyan)' }} />
+                                    <span style={{ color: 'var(--text-2)' }}>Semana de juego: <b className="text-white">{formatWeekRange(wk)}</b></span>
+                                    <button onClick={() => move(-7)} disabled={wk <= thisMonday} title="Semana anterior" className="px-2 py-0.5 rounded-md disabled:opacity-30" style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }}>‹</button>
+                                    <button onClick={() => move(7)} title="Semana siguiente" className="px-2 py-0.5 rounded-md" style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }}>›</button>
+                                </div>
+                            );
+                        })()}
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                         <Button onClick={async () => { await generateWeeklySchedule({ startGroup: startGroup || nextInRotation }); setStartGroup(''); }} className="bg-brand-red hover:bg-brand-dark text-white border-none w-full sm:w-auto py-2.5 px-5">
@@ -2617,7 +2638,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
         const ok = await showConfirm({
             title: 'Generar jornada (borrador)',
-            message: `Se emparejarán ${eligible.length} ${label} disponibles.` +
+            message: `Semana ${formatWeekRange(resolvePlayWeekStart(appSettings?.play_week_start))}.\nSe emparejarán ${eligible.length} ${label} disponibles.` +
                 (groupOrder.length > 1 ? `\n• Orden de grupos: ${groupOrder.map(groupLabel).join(' → ')}. Se reparte por rondas: el primero elige primero (mejores pistas), pero todos los grupos consiguen un partido antes de que ninguno tenga dos.` : '') +
                 (preferred.length ? `\n• ${preferred.length} hora(s) preferente(s) se intentan primero.` : '') +
                 (noCourtsAtAll ? `\n• ⚠️ No hay pistas configuradas: no se limita el nº de partidos por hora.` : '') +
@@ -2631,6 +2652,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
         generatingRef.current = true;
         try {
+            const playWeek = resolvePlayWeekStart(appSettings?.play_week_start);
+            const genNow = new Date();
             let schedule = [];
             let availableTeams = eligible;
             let scheduledTeamIds = new Set();
@@ -2649,7 +2672,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                     if (matchHistory[`${t1.id}-${t2.id}`]) continue;          // ya se enfrentaron (o tienen partido pendiente entre sí)
                     if (t1.group !== t2.group) continue;                         // misma división
                     const validSlots = t1.availability
-                        .filter(slot => t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0))
+                        .filter(slot => t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0)
+                            && (dateForSlotInWeek(slot, playWeek) || 0) > genNow)
                         .sort((a, b) => slotRank(a) - slotRank(b));             // ★ preferentes primero, luego día/hora
                     if (validSlots.length > 0) possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length, group: t1.group });
                 }
@@ -2686,7 +2710,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 schedule.push({
                     t1: match.t1, t2: match.t2, slot: finalSlot,
                     court: noCourtsConfig ? null : (pendingPerSlot[finalSlot] || 0) + n,   // nº de pista (tras las ya ocupadas)
-                    date: nextDateForSlot(finalSlot)?.toISOString() ?? null,           // fecha real del partido
+                    date: dateForSlotInWeek(finalSlot, playWeek)?.toISOString() ?? null, // fecha real del partido (semana de juego)
                 });
                 scheduledTeamIds.add(match.t1.id);
                 scheduledTeamIds.add(match.t2.id);

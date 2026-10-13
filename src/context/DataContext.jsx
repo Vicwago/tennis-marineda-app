@@ -67,6 +67,48 @@ export const nextDateForSlot = (slotId, from = new Date()) => {
     if (date <= from) date.setDate(date.getDate() + 7);
     return date;
 };
+// ─── Semana de juego ("semana del lunes 19 al domingo 25") ───────────────────
+// Es la semana que se está organizando: la ven los jugadores al marcar horas y en ella pone el
+// generador los partidos. Por defecto, la semana que viene (lunes a domingo); los monitores la
+// pueden mover y avanza sola al publicar la jornada.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const toYMD = ymd;
+const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+export const nextMonday = (from = new Date()) => {
+    const d = startOfDay(from);
+    const diff = ((8 - d.getDay()) % 7) || 7;      // lunes siguiente (si hoy es lunes, el de la semana que viene)
+    d.setDate(d.getDate() + diff);
+    return d;
+};
+export const mondayOf = (date) => { const d = startOfDay(date); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; };
+export const resolvePlayWeekStart = (stored, now = new Date()) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(stored || '')) {
+        const [y, m, d] = stored.split('-').map(Number);
+        const start = mondayOf(new Date(y, m - 1, d));
+        const end = new Date(start); end.setDate(end.getDate() + 6);
+        if (end >= startOfDay(now)) return start;    // aún no ha terminado esa semana
+    }
+    return nextMonday(now);
+};
+const DAY_OFFSET = { lun: 0, mar: 1, 'mié': 2, jue: 3, vie: 4, 'sáb': 5, dom: 6 };
+// Fecha de un slot ("mié_19:00") dentro de la semana de juego
+export const dateForSlotInWeek = (slotId, weekStart) => {
+    const [d, h] = (slotId || '').split('_');
+    if (!(d in DAY_OFFSET) || !h || !weekStart) return null;
+    const [hh, mm] = h.split(':').map(Number);
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + DAY_OFFSET[d]);
+    date.setHours(hh, mm || 0, 0, 0);
+    return date;
+};
+export const formatWeekRange = (weekStart) => {
+    if (!weekStart) return '';
+    const end = new Date(weekStart); end.setDate(end.getDate() + 6);
+    const sameMonth = end.getMonth() === weekStart.getMonth();
+    const m = (d) => d.toLocaleDateString('es-ES', { month: 'long' });
+    return sameMonth ? `del lunes ${weekStart.getDate()} al domingo ${end.getDate()} de ${m(end)}`
+        : `del lunes ${weekStart.getDate()} de ${m(weekStart)} al domingo ${end.getDate()} de ${m(end)}`;
+};
 export const formatMatchDate = (iso) => {
     if (!iso) return null;
     const d = new Date(iso);
@@ -333,7 +375,8 @@ export const DataProvider = ({ children }) => {
                         fixed_hours: parseList(s[`fixed_hours__${suffix}`]),
                         preferred_slots: parseList(s[`preferred_slots__${suffix}`]),
                         last_first_group: s[`last_first_group__${suffix}`] || '',
-                        draft_first_group: s[`draft_first_group__${suffix}`] || ''
+                        draft_first_group: s[`draft_first_group__${suffix}`] || '',
+                        play_week_start: s[`play_week_start__${suffix}`] || ''
                     });
                 }
                 setLoadedKey(myKey);
@@ -592,7 +635,7 @@ export const DataProvider = ({ children }) => {
                 sport,
                 category: sport === 'tennis' ? tennisCategory : null,
                 slot_id,
-                date: nextDateForSlot(slot_id)?.toISOString() ?? null,
+                date: (() => { const w = dateForSlotInWeek(slot_id, resolvePlayWeekStart(appSettings.play_week_start)); return (w && w > new Date() ? w : nextDateForSlot(slot_id))?.toISOString() ?? null; })(),
                 court: String(pendingSameSlot + 1),
                 played: false,
                 postponed: false
@@ -760,8 +803,15 @@ export const DataProvider = ({ children }) => {
         let q = supabase.from('matches').update({ published: true })
             .eq('sport', sport).eq('published', false).eq('completed', false);
         q = sport === 'tennis' ? q.eq('category', tennisCategory) : q.is('category', null);
-        const { data: published, error } = await q.select('id, slot_id, team1_id, team2_id');
+        const { data: published, error } = await q.select('id, slot_id, team1_id, team2_id, date');
         if (error) throw error;
+        if (published && published.length > 0) {
+            const last = published.map(m => m.date ? new Date(m.date) : null).filter(d => d && !isNaN(d)).sort((a, b) => b - a)[0];
+            if (last) {
+                const next = mondayOf(last); next.setDate(next.getDate() + 7);
+                try { await updateAppSettings('play_week_start', ymd(next)); } catch { /* no bloquea la publicación */ }
+            }
+        }
         if (!published || published.length === 0) {
             setMatches(prev => prev.map(m => (!m.completed && !m.published) ? { ...m, published: true } : m));
             return 0;
@@ -1228,7 +1278,7 @@ export const DataProvider = ({ children }) => {
     }, []);
 
     // Ajustes por ámbito (deporte/categoría). Las listas se guardan como JSON.
-    const SCOPED_SETTINGS = ['availability_locked', 'availability_deadline_label', 'fixed_hours', 'preferred_slots', 'last_first_group', 'draft_first_group'];
+    const SCOPED_SETTINGS = ['availability_locked', 'availability_deadline_label', 'fixed_hours', 'preferred_slots', 'last_first_group', 'draft_first_group', 'play_week_start'];
     const updateAppSettings = useCallback(async (key, value) => {
         try {
             const physicalKey = SCOPED_SETTINGS.includes(key) ? scopedSettingKey(key) : key;
