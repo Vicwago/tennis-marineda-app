@@ -364,7 +364,7 @@ const SearchBox = ({ value, onChange, placeholder }) => (
 
 const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
     // ── Pádel: solicitudes de unión pendientes (las puede resolver también un monitor) ──
-    const { pairRequests, respondPairRequest, renameTeam } = useData();
+    const { pairRequests, respondPairRequest, renameTeam, reloadData } = useData();
     const pendingPairs = useMemo(() => (isAdmin && !isTennis) ? (pairRequests || []).filter(r => teams.some(t => t.id === r.team_id)) : [], [pairRequests, teams, isAdmin, isTennis]);
     const [pairBusy, setPairBusy] = useState(false);
     const answerPair = async (req, accept) => {
@@ -390,6 +390,49 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
     const [linkingTeamId, setLinkingTeamId] = useState(null);
     const [accounts, setAccounts] = useState([]);
     const [linkUserId, setLinkUserId] = useState('');
+    // ── Cambiar de deporte / categoría (quien se registró en el que no era) ──
+    const [movingTeamId, setMovingTeamId] = useState(null);
+    const [moveUserId, setMoveUserId] = useState('');
+    const [moveTarget, setMoveTarget] = useState('');
+    const [movePartner, setMovePartner] = useState('');
+    const [moveBusy, setMoveBusy] = useState(false);
+    const moveTargets = (team) => (isTennis
+        ? [{ v: 'padel', l: 'Pádel' }, team.category === 'juveniles' ? { v: 'adults', l: 'Tenis adultos' } : { v: 'juveniles', l: 'Tenis juveniles' }]
+        : [{ v: 'adults', l: 'Tenis adultos' }, { v: 'juveniles', l: 'Tenis juveniles' }]);
+    const openMove = async (team) => {
+        const seats = [team.user_id, team.user_id_2].filter(Boolean);
+        setMovingTeamId(team.id); setMoveUserId(seats.length === 1 ? seats[0] : ''); setMoveTarget(''); setMovePartner('');
+        if (seats.length > 1 && accounts.length === 0) {
+            try { const list = await listUsers(); setAccounts(list || []); } catch { /* se elige por posición */ }
+        }
+    };
+    const confirmMove = async (team) => {
+        const target = moveTargets(team).find(t => t.v === moveTarget);
+        if (!moveUserId || !target) return;
+        if (target.v === 'padel' && movePartner.trim().length < 3) { showConfirm({ title: 'Falta la pareja', message: 'Escribe el nombre y apellido de su pareja de pádel.', cancelText: null, variant: 'warning' }); return; }
+        const who = accounts.find(a => a.id === moveUserId)?.full_name || (team.user_id === moveUserId ? pairParts(team.name)[0] : pairParts(team.name)[1]) || team.name;
+        const ok = await showConfirm({
+            title: `Pasar a ${target.l}`,
+            message: `${who} pasará a ${target.l}${target.v === 'padel' ? ` con ${movePartner.trim()} como pareja` : ''}.
+
+`
+                + ([team.user_id, team.user_id_2].filter(Boolean).length > 1 ? 'La pareja se queda con la otra persona.' : `Su ficha "${team.name}" se borra de aquí (todavía no tiene partidos).`)
+                + ' Le llega un aviso para que marque sus horas.',
+            confirmText: 'Cambiar', variant: 'warning'
+        });
+        if (!ok) return;
+        setMoveBusy(true);
+        try {
+            const { error } = await supabase.rpc('admin_move_player', { p_team_id: team.id, p_user_id: moveUserId, p_target: target.v, p_partner: target.v === 'padel' ? movePartner.trim() : null });
+            if (error) throw new Error(error.message);
+            setMovingTeamId(null);
+            reloadData();
+            showConfirm({ title: 'Hecho', message: `${who} ya está en ${target.l}.`, cancelText: null, variant: 'info' });
+        } catch (e) {
+            showConfirm({ title: 'No se pudo cambiar', message: e?.message || String(e), cancelText: null, variant: 'warning' });
+        } finally { setMoveBusy(false); }
+    };
+
     const openLink = async (team) => {
         setLinkingTeamId(team.id); setLinkUserId('');
         try { const list = await listUsers(); setAccounts(list || []); }
@@ -703,11 +746,47 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                                 <button onClick={() => setRenamingId(null)} className="text-[10px]" style={{ color: 'var(--text-3)' }}>Cancelar</button>
                                               </span>
                                             : <button onClick={() => { setRenamingId(team.id); setRenameValue(team.name); }} className="text-[10px] underline" style={{ color: 'var(--text-3)' }} title="Corregir el nombre (una errata, un cambio de pareja...)">renombrar</button>}
+                                        {(team.user_id || team.user_id_2) && movingTeamId !== team.id && (
+                                            <button onClick={() => openMove(team)} className="text-[10px] underline" style={{ color: 'var(--text-3)' }} title="Se registró en el deporte o la categoría que no era: pásalo al correcto">cambiar de deporte</button>
+                                        )}
                                         <button onClick={() => toggleBaja(team)} className="text-[10px] px-2 py-0.5 rounded-full font-bold"
                                             title={team.week_off ? 'No entra en las jornadas. Pulsa para volver a incluirlo.' : 'Darlo de baja del generador (no entrará en las jornadas)'}
                                             style={team.week_off ? { background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.35)' } : { background: 'rgba(255,255,255,0.04)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
                                             {team.week_off ? '⏸ No juega' : 'No juega'}
                                         </button>
+                                        {movingTeamId === team.id && (() => {
+                                            const seats = [team.user_id, team.user_id_2].filter(Boolean);
+                                            const parts = pairParts(team.name);
+                                            return (
+                                                <div className="w-full mt-2 p-3 rounded-lg space-y-2" style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.25)' }}>
+                                                    <p className="text-[11px] font-bold" style={{ color: 'var(--text-2)' }}>Se registró en el deporte que no era: ¿a dónde lo pasamos?</p>
+                                                    {seats.length > 1 && (
+                                                        <select value={moveUserId} onChange={e => setMoveUserId(e.target.value)} className="cyber-input text-xs px-2 py-1.5 rounded-lg w-full">
+                                                            <option value="">— ¿Quién de los dos? —</option>
+                                                            {seats.map((uid, i) => {
+                                                                const acc = accounts.find(a => a.id === uid);
+                                                                return <option key={uid} value={uid}>{acc ? `${acc.full_name || acc.email} · ${acc.email}` : (parts[i] || `Cuenta ${i + 1}`)}</option>;
+                                                            })}
+                                                        </select>
+                                                    )}
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {moveTargets(team).map(t => (
+                                                            <button key={t.v} onClick={() => setMoveTarget(t.v)} className="text-xs px-3 py-1.5 rounded-lg font-bold"
+                                                                style={moveTarget === t.v ? { background: 'rgba(0,212,255,0.15)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.5)' } : { color: 'var(--text-2)', border: '1px solid var(--border)' }}>
+                                                                {t.l}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    {moveTarget === 'padel' && (
+                                                        <input value={movePartner} onChange={e => setMovePartner(e.target.value)} maxLength={80} placeholder="Nombre y apellido de su pareja de pádel" className="cyber-input text-xs px-2 py-1.5 rounded-lg w-full" />
+                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        <Button size="sm" variant="success" onClick={() => confirmMove(team)} disabled={moveBusy || !moveUserId || !moveTarget}>{moveBusy ? 'Cambiando...' : 'Cambiar'}</Button>
+                                                        <button onClick={() => setMovingTeamId(null)} className="text-[10px]" style={{ color: 'var(--text-3)' }}>Cancelar</button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                     )}
                                 </div>
