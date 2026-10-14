@@ -376,7 +376,8 @@ export const DataProvider = ({ children }) => {
                         preferred_slots: parseList(s[`preferred_slots__${suffix}`]),
                         last_first_group: s[`last_first_group__${suffix}`] || '',
                         draft_first_group: s[`draft_first_group__${suffix}`] || '',
-                        play_week_start: s[`play_week_start__${suffix}`] || ''
+                        play_week_start: s[`play_week_start__${suffix}`] || '',
+                        shared_hours: parseList(s[`shared_hours__${suffix}`])
                     });
                 }
                 setLoadedKey(myKey);
@@ -1278,7 +1279,7 @@ export const DataProvider = ({ children }) => {
     }, []);
 
     // Ajustes por ámbito (deporte/categoría). Las listas se guardan como JSON.
-    const SCOPED_SETTINGS = ['availability_locked', 'availability_deadline_label', 'fixed_hours', 'preferred_slots', 'last_first_group', 'draft_first_group', 'play_week_start'];
+    const SCOPED_SETTINGS = ['availability_locked', 'availability_deadline_label', 'fixed_hours', 'preferred_slots', 'last_first_group', 'draft_first_group', 'play_week_start', 'shared_hours'];
     const updateAppSettings = useCallback(async (key, value) => {
         try {
             const physicalKey = SCOPED_SETTINGS.includes(key) ? scopedSettingKey(key) : key;

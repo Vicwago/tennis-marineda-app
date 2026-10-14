@@ -139,7 +139,7 @@ const ImportModal = ({ importText, setImportText, setShowImportModal, handleBulk
     );
 };
 
-const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, courtsMeta = {}, fixedHours = [], preferredSlots = [], fillDailyCourts, updateCourtCount, onAddFixedHour, onRemoveFixedHour, onAddSpecialSlot, onRemoveSlot, onClearExtra, onTogglePreferred, showConfirm }) => {
+const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAvailability, courtsMeta = {}, fixedHours = [], preferredSlots = [], sharedHours = [], onSaveSharedHours, fillDailyCourts, updateCourtCount, onAddFixedHour, onRemoveFixedHour, onAddSpecialSlot, onRemoveSlot, onClearExtra, onTogglePreferred, showConfirm }) => {
     const [expandedDay, setExpandedDay] = useState(DAYS[0]);
     const [addingSlotDay, setAddingSlotDay] = useState(null);
     const [newHour, setNewHour] = useState('');
@@ -152,6 +152,25 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     const baseIds = useMemo(() => new Set(generateSlots(sport, tennisCategory).map(s => s.id)), [sport, tennisCategory]);
     const HH = /^\d{2}:\d{2}$/;
     const fail = (title, message) => showConfirm({ title, message, cancelText: null, variant: 'warning' });
+
+    // ── Horas alternativas: dos horas que salen de la MISMA pista (p. ej. pádel a las 17:00 o a
+    //    las 17:30). El generador cuenta las pistas una sola vez para las dos. ──
+    const [shareA, setShareA] = useState('');
+    const [shareB, setShareB] = useState('');
+    const allHours = useMemo(() => [...new Set(currentSlots.map(s => s.hour))].sort(), [currentSlots]);
+    const usedInShare = useMemo(() => new Set(sharedHours.flatMap(g => g.split('|'))), [sharedHours]);
+    const addShare = async () => {
+        if (!shareA || !shareB || shareA === shareB) return fail('Elige dos horas distintas', 'Por ejemplo 17:00 y 17:30.');
+        if (usedInShare.has(shareA) || usedInShare.has(shareB)) return fail('Esa hora ya está emparejada', 'Quita antes la pareja de horas en la que está.');
+        setBusy(true);
+        try { await onSaveSharedHours([...sharedHours, [shareA, shareB].sort().join('|')]); setShareA(''); setShareB(''); }
+        catch (e) { fail('No se pudo guardar', e?.message || String(e)); }
+        finally { setBusy(false); }
+    };
+    const removeShare = async (g) => {
+        try { await onSaveSharedHours(sharedHours.filter(x => x !== g)); }
+        catch (e) { fail('No se pudo quitar', e?.message || String(e)); }
+    };
 
     // ── Hora fija: se añade a la rejilla de TODOS los días, para siempre ──
     const addFixed = async () => {
@@ -235,6 +254,35 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                         </div>
                     </div>
                     <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>Una hora fija se queda para siempre en los 7 días (luego pones cuántas pistas hay en cada uno). Para una pista puntual de una sola semana usa "+ Horario especial" dentro del día.</p>
+                </div>
+            )}
+
+            {/* Horas alternativas que comparten pista */}
+            {isAdmin && (
+                <div className="p-4 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Horas que comparten pista:</span>
+                        {sharedHours.length === 0 && <span className="text-xs" style={{ color: 'var(--text-3)' }}>ninguna</span>}
+                        {sharedHours.map(g => (
+                            <span key={g} className="inline-flex items-center gap-1 text-xs font-mono px-2 py-1 rounded-md" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.3)' }}>
+                                {g.split('|').join(' o ')}
+                                <button onClick={() => removeShare(g)} title="Quitar" className="ml-1" style={{ color: '#ff6b6b' }}>×</button>
+                            </span>
+                        ))}
+                        <div className="flex items-center gap-1 ml-auto">
+                            <select value={shareA} onChange={e => setShareA(e.target.value)} className="cyber-input px-2 py-1 rounded text-sm font-mono">
+                                <option value="">hora</option>
+                                {allHours.filter(h => !usedInShare.has(h)).map(h => <option key={h} value={h}>{h}</option>)}
+                            </select>
+                            <span className="text-xs" style={{ color: 'var(--text-3)' }}>o</span>
+                            <select value={shareB} onChange={e => setShareB(e.target.value)} className="cyber-input px-2 py-1 rounded text-sm font-mono">
+                                <option value="">hora</option>
+                                {allHours.filter(h => !usedInShare.has(h) && h !== shareA).map(h => <option key={h} value={h}>{h}</option>)}
+                            </select>
+                            <button onClick={addShare} disabled={busy || !shareA || !shareB} className="text-xs px-3 py-1.5 rounded-md font-bold disabled:opacity-40" style={{ background: 'rgba(0,212,255,0.12)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.3)' }}>+ Comparten pista</button>
+                        </div>
+                    </div>
+                    <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>Para la misma pista que puede empezar a una hora u otra (p. ej. pádel a las 17:00 o a las 17:30). Pon las pistas en las dos horas como siempre: el generador no pondrá más partidos entre las dos que pistas haya, y la gente puede marcar cualquiera de las dos.</p>
                 </div>
             )}
 
@@ -2714,20 +2762,36 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 (teamsAtSlot[m.slot] = teamsAtSlot[m.slot] || []).push(teamById.get(m.t1?.id), teamById.get(m.t2?.id));
             });
             const clashes = (match, slot) => !isTennis && (teamsAtSlot[slot] || []).some(o => sharePerson(o, match.t1) || sharePerson(o, match.t2));
+            // Horas que comparten pista ("17:00|17:30"): por cada día, una sola bolsa de pistas
+            // = las pistas de la hora que más tenga, menos los partidos pendientes en cualquiera de las dos.
+            const shareGroupOf = {};
+            (appSettings?.shared_hours || []).forEach(g => g.split('|').forEach(h => { shareGroupOf[h] = g; }));
+            const poolKey = (slot) => { const [d, h] = (slot || '').split('_'); return shareGroupOf[h] ? `${d}|${shareGroupOf[h]}` : null; };
+            const poolLeft = {};
+            const poolCap = {};
+            if (!noCourtsConfig) {
+                Object.keys(courtAvailability).forEach(slot => {
+                    const k = poolKey(slot);
+                    if (k) poolCap[k] = Math.max(poolCap[k] || 0, courtAvailability[slot] || 0);
+                });
+                Object.keys(poolCap).forEach(k => { poolLeft[k] = poolCap[k]; });
+                Object.entries(pendingPerSlot).forEach(([slot, n]) => { const k = poolKey(slot); if (k && k in poolLeft) poolLeft[k] = Math.max(0, poolLeft[k] - n); });
+            }
+            const hasCourt = (slot) => noCourtsConfig || ((weeklyCourts[slot] || 0) > 0 && (!poolKey(slot) || (poolLeft[poolKey(slot)] || 0) > 0));
             const tryPlace = (match) => {
                 if (scheduledTeamIds.has(match.t1.id) || scheduledTeamIds.has(match.t2.id)) return false;
-                const finalSlot = match.validSlots.find(slot => (noCourtsConfig || (weeklyCourts[slot] || 0) > 0) && !clashes(match, slot));
+                const finalSlot = match.validSlots.find(slot => hasCourt(slot) && !clashes(match, slot));
                 if (!finalSlot) return false;
                 const n = (assignedPerSlot[finalSlot] = (assignedPerSlot[finalSlot] || 0) + 1);
                 schedule.push({
                     t1: match.t1, t2: match.t2, slot: finalSlot,
-                    court: noCourtsConfig ? null : (pendingPerSlot[finalSlot] || 0) + n,   // nº de pista (tras las ya ocupadas)
+                    court: noCourtsConfig ? null : (poolKey(finalSlot) ? (poolCap[poolKey(finalSlot)] - poolLeft[poolKey(finalSlot)] + 1) : (pendingPerSlot[finalSlot] || 0) + n),   // nº de pista (tras las ya ocupadas)
                     date: dateForSlotInWeek(finalSlot, playWeek)?.toISOString() ?? null, // fecha real del partido (semana de juego)
                 });
                 scheduledTeamIds.add(match.t1.id);
                 scheduledTeamIds.add(match.t2.id);
                 (teamsAtSlot[finalSlot] = teamsAtSlot[finalSlot] || []).push(match.t1, match.t2);
-                if (!noCourtsConfig) weeklyCourts[finalSlot]--;
+                if (!noCourtsConfig) { weeklyCourts[finalSlot]--; if (poolKey(finalSlot)) poolLeft[poolKey(finalSlot)]--; }
                 return true;
             };
             let progress = true;
@@ -2972,7 +3036,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} availabilitySlots={availabilitySlots} sport={sport} showConfirm={showConfirm} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} publishSchedule={publishSchedule} discardDrafts={discardDrafts} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
                 {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} onLinkAccount={linkTeamAccount} onUnlinkAccount={unlinkTeamAccount} onToggleWeekOff={updateWeekOff} listUsers={listUsers} showConfirm={showConfirm} />}
-                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
+                {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} sharedHours={appSettings?.shared_hours || []} onSaveSharedHours={(list) => updateAppSettings('shared_hours', list)} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esos dos jugadores ya tienen otro partido pendiente entre sí. Registra o elimina ese partido antes de reabrir este.' : (e?.message || String(e)); showConfirm({ title: 'No se pudo reabrir', message: msg, cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}
                 {activeTab === 'calendar' && <CalendarView matches={visibleMatches} currentSlots={currentSlots} />}
