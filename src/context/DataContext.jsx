@@ -192,6 +192,8 @@ export const DataProvider = ({ children }) => {
     // Referencia siempre actualizada a matches: evita closures obsoletos cuando el admin
     // registra varios resultados seguidos (el segundo pisaba al primero hasta recargar).
     const matchesRef = useRef([]);
+    // Partidos con una acción en curso (resultado, W.O., aplazar): un doble toque no duplica avisos
+    const inFlightRef = useRef(new Set());
     useEffect(() => { matchesRef.current = matches; }, [matches]);
     const [appSettings, setAppSettings] = useState({
         availability_locked: false, availability_deadline_label: '',
@@ -445,6 +447,7 @@ export const DataProvider = ({ children }) => {
     // Antes: borrado + inserción por separado sin mirar errores → "guardada" aunque no lo estuviera.
     const updateTeamAvailability = useCallback(async (teamId, availabilitySlotIds) => {
         const slots = currentSlots.filter(s => availabilitySlotIds.includes(s.id)).map(s => ({ day: s.day, hour: s.hour }));
+        if (slots.length === 0 && availabilitySlotIds.length > 0) throw new Error('Las horas que tenías marcadas ya no existen (han cambiado las pistas). Márcalas de nuevo y guarda.');
         const { error } = await supabase.rpc('set_team_availability', { p_team_id: teamId, p_slots: slots });
         if (error) throw new Error(error.message || 'No se pudo guardar la disponibilidad.');
         setTeams(prev => prev.map(t => t.id === teamId ? { ...t, availability: availabilitySlotIds, availability_confirmed_at: new Date().toISOString() } : t));
@@ -511,6 +514,8 @@ export const DataProvider = ({ children }) => {
     // loserWonSet: +1 pt al perdedor si ganó algún set (aplica a ambos deportes)
     const saveMatchResult = async (matchId, score, winnerIdRaw, loserWonSet = false) => {
         const winnerId = Number(winnerIdRaw); // el <select> devuelve texto: "12" !== 12 invertía ganador/perdedor
+        if (inFlightRef.current.has(matchId)) return;
+        inFlightRef.current.add(matchId);
         try {
             const winnerPts = 4;
             const loserPts  = loserWonSet ? 2 : 1;
@@ -555,10 +560,14 @@ export const DataProvider = ({ children }) => {
         } catch (error) {
             console.error('Error saving result:', error);
             alert('Error al guardar resultado: ' + error.message);
+        } finally {
+            inFlightRef.current.delete(matchId);
         }
     };
 
     const postponeMatch = async (matchId) => {
+        if (inFlightRef.current.has(matchId) || matchesRef.current.find(m => m.id === matchId)?.postponed) return;
+        inFlightRef.current.add(matchId);
         try {
             const { error } = await supabase
                 .from('matches')
@@ -582,12 +591,16 @@ export const DataProvider = ({ children }) => {
         } catch (error) {
             console.error('Error postponing match:', error);
             alert('Error al aplazar partido: ' + error.message);
+        } finally {
+            inFlightRef.current.delete(matchId);
         }
     };
 
     // notified: el ausente avisó con >48h → pádel: 0 pts / sin aviso → pádel: -1 pt · tenis: siempre 0
     const registerWalkover = async (matchId, winnerIdRaw, notified = false) => {
         const winnerId = Number(winnerIdRaw);
+        if (inFlightRef.current.has(matchId)) return;
+        inFlightRef.current.add(matchId);
         try {
             const winnerPts = 4;
             const loserPts  = sport === 'padel' ? (notified ? 0 : -1) : 0;
@@ -629,6 +642,8 @@ export const DataProvider = ({ children }) => {
         } catch (error) {
             console.error('Error registering WO:', error);
             alert('Error al registrar W.O.: ' + error.message);
+        } finally {
+            inFlightRef.current.delete(matchId);
         }
     };
 
@@ -644,7 +659,17 @@ export const DataProvider = ({ children }) => {
                 sport,
                 category: sport === 'tennis' ? tennisCategory : null,
                 slot_id,
-                date: (() => { const w = dateForSlotInWeek(slot_id, resolvePlayWeekStart(appSettings.play_week_start)); return (w && w > new Date() ? w : nextDateForSlot(slot_id))?.toISOString() ?? null; })(),
+                date: (() => {
+                    // Si hay partidos pendientes de hoy en adelante (jornada publicada o en borrador),
+                    // el nuevo va en la semana del último de ellos; si no, en la semana de juego.
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                    const pendDates = matchesRef.current
+                        .filter(m => !m.completed && !m.postponed && m.date && new Date(m.date) >= today)
+                        .map(m => new Date(m.date));
+                    const base = pendDates.length ? mondayOf(new Date(Math.max(...pendDates))) : resolvePlayWeekStart(appSettings.play_week_start);
+                    const w = dateForSlotInWeek(slot_id, base);
+                    return (w && w > new Date() ? w : nextDateForSlot(slot_id))?.toISOString() ?? null;
+                })(),
                 court: String(pendingSameSlot + 1),
                 played: false,
                 postponed: false
@@ -672,10 +697,14 @@ export const DataProvider = ({ children }) => {
     const updateMatch = async (matchId, updates) => {
         try {
             const dbUpdates = {};
-            if (updates.slot_id !== undefined) {
+            const prevMatch = matchesRef.current.find(m => m.id === matchId);
+            const slotChanged = updates.slot_id !== undefined && updates.slot_id !== (prevMatch?.slot_id ?? prevMatch?.slot);
+            if (updates.slot_id !== undefined && (slotChanged || prevMatch?.postponed || !prevMatch?.date)) {
                 dbUpdates.slot_id = updates.slot_id;
-                // Reprogramar: nueva fecha real y se quita el estado APLAZADO
-                dbUpdates.date = nextDateForSlot(updates.slot_id)?.toISOString() ?? null;
+                // Reprogramar: misma semana que tenía el partido (si aún no ha pasado esa hora);
+                // si no, la próxima vez que caiga. Y se quita el estado APLAZADO.
+                const w = prevMatch?.date && !prevMatch?.postponed ? dateForSlotInWeek(updates.slot_id, mondayOf(new Date(prevMatch.date))) : null;
+                dbUpdates.date = (w && w > new Date() ? w : nextDateForSlot(updates.slot_id))?.toISOString() ?? null;
                 dbUpdates.postponed = false;
             }
             if (updates.team1_id !== undefined) dbUpdates.team1_id = updates.team1_id;
@@ -818,7 +847,9 @@ export const DataProvider = ({ children }) => {
             const last = published.map(m => m.date ? new Date(m.date) : null).filter(d => d && !isNaN(d)).sort((a, b) => b - a)[0];
             if (last) {
                 const next = mondayOf(last); next.setDate(next.getDate() + 7);
-                try { await updateAppSettings('play_week_start', ymd(next)); } catch { /* no bloquea la publicación */ }
+                const cap = nextMonday(); cap.setDate(cap.getDate() + 7);   // como mucho, la semana después de la que viene
+                const target = next > cap ? cap : next;
+                try { await updateAppSettings('play_week_start', ymd(target)); } catch { /* no bloquea la publicación */ }
             }
         }
         if (!published || published.length === 0) {

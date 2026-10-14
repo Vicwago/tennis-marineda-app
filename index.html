@@ -63,7 +63,7 @@
       }
       // 3. Auto-actualizar: comprobar si el HTML cargado es el más reciente
       (function() {
-        var BUILD_VERSION = 'v2026-10-14-6';
+        var BUILD_VERSION = 'v2026-10-14-7';
         window.__BUILD_VERSION = BUILD_VERSION;
         var vKey = 'app_version';
         var stored = localStorage.getItem(vKey);
@@ -71,7 +71,9 @@
           localStorage.setItem(vKey, BUILD_VERSION);
           // Forzar recarga saltándose caché del navegador. Se conserva el #hash: el enlace de
           // "recuperar contraseña" trae el token ahí y antes se perdía en esta recarga.
-          location.href = location.pathname + '?_=' + Date.now() + location.hash;
+          var qs = location.search.replace(/([?&])_=\d+(?=&|$)/g, '').replace(/^&/, '?');
+          if (qs === '?') qs = '';
+          location.href = location.pathname + (qs ? qs + '&' : '?') + '_=' + Date.now() + location.hash;
           return;
         }
         localStorage.setItem(vKey, BUILD_VERSION);

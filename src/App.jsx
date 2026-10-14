@@ -40,7 +40,7 @@ const SplashScreen = () => (
 );
 
 const AppContent = () => {
-  const { isAuthenticated, loading, recoveryMode } = useAuth();
+  const { isAuthenticated, loading, recoveryMode, finishRecovery } = useAuth();
   const { setSport } = useGame();
   const [currentPath, setCurrentPath] = React.useState(window.location.pathname);
   const [theme, setTheme] = React.useState(getInitialTheme);
@@ -76,7 +76,7 @@ const AppContent = () => {
   if (recoveryMode) {
     return (
       <Suspense fallback={<SplashScreen />}>
-        <ResetPassword onDone={() => navigate('/')} />
+        <ResetPassword onDone={() => { finishRecovery(); navigate('/'); }} />
       </Suspense>
     );
   }

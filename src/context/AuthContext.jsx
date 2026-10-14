@@ -190,8 +190,10 @@ export const AuthProvider = ({ children }) => {
     const updatePassword = async (newPassword) => {
         const { error } = await supabase.auth.updateUser({ password: newPassword });
         if (error) throw error;
-        setRecoveryMode(false);
+        // recoveryMode se apaga al pulsar "Entrar en la app" (finishRecovery): si se apagase aquí,
+        // la pantalla desaparecería antes de enseñar "Contraseña actualizada".
     };
+    const finishRecovery = () => setRecoveryMode(false);
 
     // Recuperación por CÓDIGO de 6 dígitos (el mismo correo lo trae). Es la vía robusta: no
     // depende de que el enlace se abra en el mismo navegador ni de que el gestor de correo
@@ -215,6 +217,7 @@ export const AuthProvider = ({ children }) => {
         resetPassword,
         updatePassword,
         verifyRecoveryCode,
+        finishRecovery,
         recoveryMode,
         loading,
         isAuthenticated: !!user

@@ -64,6 +64,8 @@ export default function NotificationsPanel({ onClose, onOpenPair }) {
         const handleClick = (e) => {
             // La campana gestiona su propio toggle: si no la ignoramos, mousedown cierra y click reabre.
             if (e.target.closest && e.target.closest('[data-notif-bell]')) return;
+            // Hay una copia del panel para móvil y otra para escritorio: la que está oculta no decide nada
+            if (!panelRef.current || panelRef.current.getClientRects().length === 0) return;
             if (panelRef.current && !panelRef.current.contains(e.target)) {
                 onClose();
             }

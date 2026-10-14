@@ -543,7 +543,7 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
         finally { setAddBusy(false); }
     };
     // ⚡ useMemo: no recalcular en cada render del padre
-    const groups = useMemo(() => ['Todos', ...new Set(teams.map(t => t.group).filter(Boolean))].sort(), [teams]);
+    const groups = useMemo(() => ['Todos', ...[...new Set(teams.map(t => t.group).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true }))], [teams]);
     // Con algo escrito en la lupa se busca en TODOS los grupos
     const filteredTeams = useMemo(
         () => query.trim() ? teams.filter(t => matchesSearch(t.name, query))
@@ -1313,7 +1313,8 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                                 <button key={t.id} onClick={() => switchTeam(t)} className="p-3 rounded-xl text-left transition-all"
                                     style={on ? { background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.5)' } : { background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                                     <p className="text-sm font-bold text-white truncate">{t.name}</p>
-                                    <p className="text-[11px]" style={{ color: on ? 'var(--cyan)' : 'var(--text-3)' }}>{t.group ? `Grupo ${t.group}` : 'Sin grupo todavía'} · {(t.availability || []).length} hora{(t.availability || []).length !== 1 ? 's' : ''}</p>
+                                    <p className="text-[11px]" style={{ color: on ? 'var(--cyan)' : 'var(--text-3)' }}>{t.group ? `Grupo ${t.group}` : 'Sin grupo todavía'} · {(t.availability || []).length} hora{(t.availability || []).length !== 1 ? 's' : ''}
+                                        {!t.week_off && (isConfirmedForWeek(t, playWeek) ? <span style={{ color: '#00ff87' }}> · confirmadas</span> : <span style={{ color: '#FFC107' }}> · sin confirmar</span>)}</p>
                                 </button>
                             );
                         })}
@@ -1368,7 +1369,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                         {hasUnsavedChanges && !isLocked && (
                             <Button onClick={save} className="flex-1 sm:flex-none text-sm py-2">Guardar</Button>
                         )}
-                        {!hasUnsavedChanges && !isLocked && (
+                        {!hasUnsavedChanges && !isLocked && (!team || team.week_off || isConfirmedForWeek(team, playWeek)) && (
                             <span className="text-xs px-2 py-1 rounded-full" style={{ color: '#4CAF50', background: 'rgba(76,175,80,0.1)', border: '1px solid rgba(76,175,80,0.3)' }}>✓ Guardado</span>
                         )}
                     </div>
@@ -1852,9 +1853,9 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                                             }
                                                             submitResult(match.id, score, Number(winner), loserWonSet);
                                                         }}>OK</Button>
-                                                        <Button size="sm" variant="ghost" className="font-medium" style={{ color: '#F59E0B' }} onClick={() => postponeMatch(match.id)}>
+                                                        {!match.postponed && <Button size="sm" variant="ghost" className="font-medium" style={{ color: '#F59E0B' }} onClick={() => postponeMatch(match.id)}>
                                                             Aplazar
-                                                        </Button>
+                                                        </Button>}
                                                         <Button size="sm" variant="ghost" className="font-medium" style={{ color: 'var(--text-3)' }} title="Walkover / Retirada" onClick={() => {
                                                             const winner = document.getElementById(`winner-${match.id}`).value;
                                                             if (!winner) {
@@ -2103,7 +2104,7 @@ const HistoryView = memo(({ matches, currentSlots, teams, isAdmin, onCorrect }) 
 
     // Get unique groups from teams
     const groups = useMemo(() => {
-        const g = [...new Set((teams || []).map(t => t.group).filter(Boolean))].sort();
+        const g = [...new Set((teams || []).map(t => t.group).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true }));
         return g;
     }, [teams]);
 
@@ -2684,6 +2685,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         // ¿Hay borradores? Lo normal es que el admin quiera REHACER la jornada: se descartan
         // (nadie los ha visto) y se genera de nuevo sin que bloqueen a sus jugadores.
         let baseMatches = matches;
+        let redoDrafts = false;
         const existingDrafts = matches.filter(m => !m.completed && !m.published);
         if (existingDrafts.length > 0) {
             const redo = await showConfirm({
@@ -2692,7 +2694,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 confirmText: 'Descartar y generar de nuevo', cancelText: 'Mantenerlos', variant: 'warning'
             });
             if (redo) {
-                try { await discardDrafts(); } catch (e) { showConfirm({ title: 'No se pudieron descartar', message: e?.message || String(e), cancelText: null, variant: 'danger' }); return; }
+                // Se descartan justo antes de generar (tras la confirmación final): si se cancela, no se pierden
+                redoDrafts = true;
                 baseMatches = matches.filter(m => m.completed || m.published);
             }
         }
@@ -2703,7 +2706,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             q = isTennis ? q.eq('category', tennisCategory) : q.is('category', null);
             const { data: liveRows, error: liveErr } = await q;
             if (liveErr) throw liveErr;
-            const liveIds = new Set((liveRows || []).map(r => r.id));
+            const draftIds = new Set(redoDrafts ? existingDrafts.map(m => m.id) : []);
+            const liveIds = new Set((liveRows || []).map(r => r.id).filter(id => !draftIds.has(id)));
             const localIds = new Set(baseMatches.filter(m => !m.completed).map(m => m.id));
             const differs = liveIds.size !== localIds.size || [...liveIds].some(id => !localIds.has(id));
             if (differs) {
@@ -2729,11 +2733,15 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
         const pendingByTeam = new Set();
         const pendingPerSlot = {};
+        const wkStart = resolvePlayWeekStart(appSettings?.play_week_start);
+        const wkEnd = new Date(wkStart); wkEnd.setDate(wkEnd.getDate() + 7);
+        // ¿Ocupa pista en la semana de juego? (los pendientes de semanas pasadas ya no)
+        const inPlayWeek = (m) => !m.date || (new Date(m.date) >= wkStart && new Date(m.date) < wkEnd);
         baseMatches.forEach(m => {
             if (!m.completed) {
                 pendingByTeam.add(m.t1.id); pendingByTeam.add(m.t2.id);
                 // Un APLAZADO sigue bloqueando a sus jugadores, pero ya no reserva pista en su hora vieja
-                if (!m.postponed) pendingPerSlot[m.slot] = (pendingPerSlot[m.slot] || 0) + 1;
+                if (!m.postponed && inPlayWeek(m)) pendingPerSlot[m.slot] = (pendingPerSlot[m.slot] || 0) + 1;
             }
         });
         const active = teams.filter(t => !t.week_off);
@@ -2795,7 +2803,17 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             let schedule = [];
             let availableTeams = eligible;
             let scheduledTeamIds = new Set();
-            let weeklyCourts = { ...courtAvailability };
+            // Pistas de cada hora EN LA SEMANA DE JUEGO: un horario especial o unas pistas extra de una
+            // sola vez que caducan antes de ese día no cuentan (valen solo para la próxima vez que cae).
+            const effCourts = { ...courtAvailability };
+            Object.entries(courtsMeta || {}).forEach(([slot, meta]) => {
+                const when = dateForSlotInWeek(slot, playWeek);
+                if (!when || !(slot in effCourts)) return;
+                if (meta?.expires_at && new Date(meta.expires_at) <= when) effCourts[slot] = 0;
+                else if ((meta?.extra_once || 0) > 0 && meta?.extra_expires_at && new Date(meta.extra_expires_at) <= when)
+                    effCourts[slot] = Math.max(0, (effCourts[slot] || 0) - meta.extra_once);
+            });
+            let weeklyCourts = { ...effCourts };
             const noCourtsConfig = Object.keys(weeklyCourts).length === 0;
             if (!noCourtsConfig) {
                 Object.entries(pendingPerSlot).forEach(([slot, n]) => { weeklyCourts[slot] = Math.max(0, (weeklyCourts[slot] || 0) - n); });
@@ -2848,10 +2866,19 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             };
             const teamsAtSlot = {};
             if (!isTennis) baseMatches.forEach(m => {
-                if (m.completed || m.postponed) return;
+                if (m.completed || m.postponed || !inPlayWeek(m)) return;
                 (teamsAtSlot[m.slot] = teamsAtSlot[m.slot] || []).push(teamById.get(m.t1?.id), teamById.get(m.t2?.id));
             });
-            const clashes = (match, slot) => !isTennis && (teamsAtSlot[slot] || []).some(o => sharePerson(o, match.t1) || sharePerson(o, match.t2));
+            const toMin = (h) => { const [a, b] = String(h || '').split(':').map(Number); return a * 60 + (b || 0); };
+            const clashes = (match, slot) => {
+                if (isTennis) return false;
+                const [d, h] = slot.split('_');
+                return Object.entries(teamsAtSlot).some(([s, list]) => {
+                    const [d2, h2] = s.split('_');
+                    if (d2 !== d || Math.abs(toMin(h2) - toMin(h)) >= 90) return false;   // un partido de pádel dura 1h30
+                    return list.some(o => sharePerson(o, match.t1) || sharePerson(o, match.t2));
+                });
+            };
             // Horas que comparten pista ("17:00|17:30"): por cada día, una sola bolsa de pistas
             // = las pistas de la hora que más tenga, menos los partidos pendientes en cualquiera de las dos.
             const shareGroupOf = {};   // "mar@20:30" o "@20:30" → grupo
@@ -2864,9 +2891,9 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             const poolLeft = {};
             const poolCap = {};
             if (!noCourtsConfig) {
-                Object.keys(courtAvailability).forEach(slot => {
+                Object.keys(effCourts).forEach(slot => {
                     const k = poolKey(slot);
-                    if (k) poolCap[k] = Math.max(poolCap[k] || 0, courtAvailability[slot] || 0);
+                    if (k) poolCap[k] = Math.max(poolCap[k] || 0, effCourts[slot] || 0);
                 });
                 Object.keys(poolCap).forEach(k => { poolLeft[k] = poolCap[k]; });
                 Object.entries(pendingPerSlot).forEach(([slot, n]) => { const k = poolKey(slot); if (k && k in poolLeft) poolLeft[k] = Math.max(0, poolLeft[k] - n); });
@@ -2899,6 +2926,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 }
             }
 
+            if (redoDrafts) await discardDrafts();
             await createSchedule(schedule);
             // Se anota quién va primero en ESTE borrador; la rotación real avanza al publicar
             if (groupOrder.length > 1) { try { await updateAppSettings('draft_first_group', groupOrder[0]); } catch { /* no bloquea */ } }
@@ -2920,7 +2948,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         } finally {
             generatingRef.current = false;
         }
-    }, [isAdmin, teams, matches, courtAvailability, currentSlots, appSettings, createSchedule, discardDrafts, updateAppSettings, isTennis, sport, tennisCategory, showConfirm]);
+    }, [isAdmin, teams, matches, courtAvailability, courtsMeta, currentSlots, appSettings, createSchedule, discardDrafts, updateAppSettings, isTennis, sport, tennisCategory, showConfirm]);
 
     const submitResultHandler = useCallback((matchId, score, winnerId, loserWonSet = false) => {
         if (!isAdmin) return;
@@ -3143,7 +3171,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                         { accent: '#00ff87', border: 'rgba(0,255,135,0.4)', bg: 'rgba(0,255,135,0.07)', tabBg: 'rgba(0,255,135,0.15)' },
                         { accent: '#AB47BC', border: 'rgba(171,71,188,0.4)', bg: 'rgba(171,71,188,0.07)', tabBg: 'rgba(171,71,188,0.15)' },
                     ];
-                    const groups = [...new Set(teams.map(t => t.group || 'General').filter(Boolean))].sort();
+                    const groups = [...new Set(teams.map(t => t.group || 'General').filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true }));
                     const curGroup = (activeStandingsGroup && groups.includes(activeStandingsGroup)) ? activeStandingsGroup : groups[0] || null;
                     if (loading && groups.length === 0) return (
                         <div className="flex items-center justify-center gap-2 py-16" style={{ color: 'var(--text-3)' }}>
@@ -3699,7 +3727,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
                 {/* Mobile Menu Overlay */}
                 {isMobileMenuOpen && (
-                    <div className="md:hidden fixed inset-0 z-20 overflow-y-auto" style={{ background: 'var(--bg-nav)', backdropFilter: 'blur(16px)', paddingTop: 'calc(4rem + var(--sat))', paddingBottom: 'var(--sab)' }}>
+                    <div className="md:hidden fixed inset-0 z-[25] overflow-y-auto" style={{ background: 'var(--bg-nav)', backdropFilter: 'blur(16px)', paddingTop: 'calc(4rem + var(--sat))', paddingBottom: 'var(--sab)' }}>
                         <div className="px-4 py-4 space-y-2">
                             <button onClick={() => { setSport(null); setIsMobileMenuOpen(false); }} className="w-full p-3.5 rounded-xl text-left font-bold text-white text-sm" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)' }}>🏠 Inicio</button>
 
