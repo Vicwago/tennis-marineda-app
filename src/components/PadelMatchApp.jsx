@@ -1285,6 +1285,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                         <div>
                             <h2 className="text-lg font-bold text-white">Hola, <span style={{ color: 'var(--cyan)' }}>{sport === 'padel' ? (firstName(user?.full_name || user?.name) || team?.name) : team?.name}</span></h2>
                             <p className="text-xs" style={{ color: 'var(--text-2)' }}>{sport === 'padel' ? <>Pareja: <b className="text-white">{team?.name}</b>. Marca solo las horas a las que podéis los dos: son de la pareja y con que lo haga uno, basta.</> : 'Gestiona tus horarios para esta semana.'}</p>
+                            <p className="text-xs mt-1 font-bold flex items-center gap-1.5" style={{ color: 'var(--cyan)' }}><Calendar size={13} /> Semana {formatWeekRange(playWeek)}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -2445,6 +2446,17 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
     // Scroll active tab into view when it changes + scroll indicator
     const tabsNavRef = useRef(null);
+    // Alto de la cabecera del móvil: la barra de pestañas se queda fija justo debajo al bajar
+    const mobileHeaderRef = useRef(null);
+    useEffect(() => {
+        const el = mobileHeaderRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const set = () => document.documentElement.style.setProperty('--mobile-header-h', `${el.offsetHeight}px`);
+        set();
+        const ro = new ResizeObserver(set);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
     useEffect(() => {
         if (!tabsNavRef.current) return;
         const activeBtn = tabsNavRef.current.querySelector('[data-tab="' + activeTab + '"]');
@@ -3146,7 +3158,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     };
 
     return (
-        <div className="min-h-screen font-sans text-white flex overflow-x-hidden" style={{ background: 'var(--bg-deepest)' }}>
+        <div className="min-h-screen font-sans text-white flex" style={{ background: 'var(--bg-deepest)', overflowX: 'clip' }}>
             {ConfirmDialogEl}
             {showImportModal && <ImportModal importText={importText} setImportText={setImportText} setShowImportModal={setShowImportModal} handleBulkImport={handleBulkImport} />}
             {chatMatch && <MatchChat match={chatMatch} onClose={() => setChatMatch(null)} />}
@@ -3493,10 +3505,10 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 md:ml-64 flex flex-col min-h-screen w-full overflow-x-hidden">
+            <div className="flex-1 md:ml-64 flex flex-col min-h-screen w-full" style={{ overflowX: 'clip' }}>
 
                 {/* Mobile Header */}
-                <header className="md:hidden p-4 flex justify-between items-center sticky top-0 z-30"
+                <header ref={mobileHeaderRef} className="md:hidden p-4 flex justify-between items-center sticky top-0 z-30"
                     style={{ background: 'var(--bg-header)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)', paddingTop: 'calc(1rem + var(--sat))' }}>
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg p-1" style={{ background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.3)' }}>
@@ -3583,8 +3595,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
 
                 {/* Top Bar (Contextual) */}
                 {sport && (
-                    <div className="sticky top-0 z-10 px-3 md:px-6 py-2 md:py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
-                        style={{ background: 'var(--bg-header)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}>
+                    <div className="sticky z-20 px-3 md:px-6 py-2 md:py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
+                        style={{ top: 'var(--mobile-header-h, 0px)', background: 'var(--bg-header)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}>
                         <div className="flex items-center gap-4">
                             <h2 className="text-lg font-bold text-white capitalize flex items-center gap-2">
                                 <span style={{ color: sport === 'padel' ? '#E53935' : '#FFC107' }}>
