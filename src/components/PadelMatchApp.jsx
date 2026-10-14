@@ -44,6 +44,9 @@ const Button = ({ children, onClick, variant = "primary", className = "", disabl
 };
 
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+const DAY_CODES = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+// "Horas que comparten pista": "17:00|17:30" (todos los días) o "mar@20:30|21:00" (solo ese día)
+const parseShare = (g) => { const [a, b] = String(g).includes('@') ? String(g).split('@') : ['', String(g)]; return { day: a, hours: b.split('|') }; };
 // "1" → "Grupo 1"; "Grupo 1" / "General" → tal cual (evita "Grupo Grupo 1")
 const groupLabel = (g) => /^\d+$/.test(String(g)) ? `Grupo ${g}` : String(g);
 
@@ -157,13 +160,16 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
     //    las 17:30). El generador cuenta las pistas una sola vez para las dos. ──
     const [shareA, setShareA] = useState('');
     const [shareB, setShareB] = useState('');
+    const [shareDay, setShareDay] = useState('');   // '' = todos los días
     const allHours = useMemo(() => [...new Set(currentSlots.map(s => s.hour))].sort(), [currentSlots]);
-    const usedInShare = useMemo(() => new Set(sharedHours.flatMap(g => g.split('|'))), [sharedHours]);
+    // Horas ya emparejadas para el día elegido (las de "todos los días" cuentan para cualquier día)
+    const usedInShare = useMemo(() => new Set(sharedHours.map(parseShare)
+        .filter(g => !g.day || !shareDay || g.day === shareDay).flatMap(g => g.hours)), [sharedHours, shareDay]);
     const addShare = async () => {
         if (!shareA || !shareB || shareA === shareB) return fail('Elige dos horas distintas', 'Por ejemplo 17:00 y 17:30.');
-        if (usedInShare.has(shareA) || usedInShare.has(shareB)) return fail('Esa hora ya está emparejada', 'Quita antes la pareja de horas en la que está.');
+        if (usedInShare.has(shareA) || usedInShare.has(shareB)) return fail('Esa hora ya está emparejada', 'Ese día ya tiene esa hora en otra pareja. Quítala antes.');
         setBusy(true);
-        try { await onSaveSharedHours([...sharedHours, [shareA, shareB].sort().join('|')]); setShareA(''); setShareB(''); }
+        try { await onSaveSharedHours([...sharedHours, (shareDay ? `${shareDay}@` : '') + [shareA, shareB].sort().join('|')]); setShareA(''); setShareB(''); }
         catch (e) { fail('No se pudo guardar', e?.message || String(e)); }
         finally { setBusy(false); }
     };
@@ -265,11 +271,15 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                         {sharedHours.length === 0 && <span className="text-xs" style={{ color: 'var(--text-3)' }}>ninguna</span>}
                         {sharedHours.map(g => (
                             <span key={g} className="inline-flex items-center gap-1 text-xs font-mono px-2 py-1 rounded-md" style={{ background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.3)' }}>
-                                {g.split('|').join(' o ')}
+                                {(() => { const x = parseShare(g); const dn = x.day ? DAYS[DAY_CODES.indexOf(x.day)] : 'Todos los días'; return `${dn}: ${x.hours.join(' o ')}`; })()}
                                 <button onClick={() => removeShare(g)} title="Quitar" className="ml-1" style={{ color: '#ff6b6b' }}>×</button>
                             </span>
                         ))}
-                        <div className="flex items-center gap-1 ml-auto">
+                        <div className="flex flex-wrap items-center gap-1 ml-auto">
+                            <select value={shareDay} onChange={e => { setShareDay(e.target.value); setShareA(''); setShareB(''); }} className="cyber-input px-2 py-1 rounded text-sm" aria-label="Día">
+                                <option value="">Todos los días</option>
+                                {DAYS.map((d, i) => <option key={d} value={DAY_CODES[i]}>{d}</option>)}
+                            </select>
                             <select value={shareA} onChange={e => setShareA(e.target.value)} className="cyber-input px-2 py-1 rounded text-sm font-mono">
                                 <option value="">hora</option>
                                 {allHours.filter(h => !usedInShare.has(h)).map(h => <option key={h} value={h}>{h}</option>)}
@@ -282,7 +292,7 @@ const CourtsView = memo(({ sport, tennisCategory, isAdmin, currentSlots, courtAv
                             <button onClick={addShare} disabled={busy || !shareA || !shareB} className="text-xs px-3 py-1.5 rounded-md font-bold disabled:opacity-40" style={{ background: 'rgba(0,212,255,0.12)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.3)' }}>+ Comparten pista</button>
                         </div>
                     </div>
-                    <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>Para la misma pista que puede empezar a una hora u otra (p. ej. pádel a las 17:00 o a las 17:30). Pon las pistas en las dos horas como siempre: el generador no pondrá más partidos entre las dos que pistas haya, y la gente puede marcar cualquiera de las dos.</p>
+                    <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>Para la misma pista que puede empezar a una hora u otra (p. ej. pádel a las 17:00 o a las 17:30). Elige "Todos los días" o un día concreto. Pon las pistas en las dos horas como siempre: el generador no pondrá más partidos entre las dos que pistas haya, y la gente puede marcar cualquiera de las dos.</p>
                 </div>
             )}
 
@@ -1677,6 +1687,28 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                 </div>
                             );
                         })()}
+                        {(() => {
+                            const groupsHere = [...new Set((teams || []).map(t => t.group).filter(Boolean).map(String))]
+                                .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+                            if (groupsHere.length === 0) return null;
+                            const dbl = new Set((appSettings?.double_round_groups || []).map(String));
+                            const toggle = async (g) => {
+                                const next = dbl.has(g) ? [...dbl].filter(x => x !== g) : [...dbl, g];
+                                try { await updateAppSettings('double_round_groups', next); }
+                                catch (e) { showConfirm({ title: 'No se pudo cambiar', message: e?.message || String(e), cancelText: null, variant: 'warning' }); }
+                            };
+                            return (
+                                <div className="flex flex-wrap items-center gap-1.5 mt-2 text-xs">
+                                    <span style={{ color: 'var(--text-2)' }} title="En esos grupos dos rivales pueden enfrentarse dos veces (útil con pocos equipos)">Doble vuelta:</span>
+                                    {groupsHere.map(g => (
+                                        <button key={g} onClick={() => toggle(g)} className="px-2 py-0.5 rounded-md font-bold"
+                                            style={dbl.has(g) ? { background: 'rgba(0,212,255,0.15)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.5)' } : { color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+                                            {groupLabel(g)}{dbl.has(g) ? ' ✓' : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                         <Button onClick={async () => { await generateWeeklySchedule({ startGroup: startGroup || nextInRotation }); setStartGroup(''); }} className="bg-brand-red hover:bg-brand-dark text-white border-none w-full sm:w-auto py-2.5 px-5">
@@ -2722,20 +2754,31 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             if (!noCourtsConfig) {
                 Object.entries(pendingPerSlot).forEach(([slot, n]) => { weeklyCourts[slot] = Math.max(0, (weeklyCourts[slot] || 0) - n); });
             }
-            const matchHistory = {};
-            baseMatches.forEach(m => { matchHistory[`${m.t1.id}-${m.t2.id}`] = true; matchHistory[`${m.t2.id}-${m.t1.id}`] = true; });
+            // Cuántas veces se han enfrentado (jugados + pendientes) y si tienen uno pendiente entre sí.
+            // Grupos con DOBLE VUELTA (p. ej. pádel 4ª, pocos equipos): pueden enfrentarse hasta 2 veces.
+            const meetCount = {};
+            const pendingPair = new Set();
+            baseMatches.forEach(m => {
+                const k = [m.t1.id, m.t2.id].sort((a, b) => a - b).join('-');
+                meetCount[k] = (meetCount[k] || 0) + 1;
+                if (!m.completed) pendingPair.add(k);
+            });
+            const doubleGroups = new Set((appSettings?.double_round_groups || []).map(String));
             let possibleMatchups = [];
             for (let i = 0; i < availableTeams.length; i++) {
                 for (let j = i + 1; j < availableTeams.length; j++) {
                     const t1 = availableTeams[i];
                     const t2 = availableTeams[j];
-                    if (matchHistory[`${t1.id}-${t2.id}`]) continue;          // ya se enfrentaron (o tienen partido pendiente entre sí)
                     if (t1.group !== t2.group) continue;                         // misma división
+                    const pk = [t1.id, t2.id].sort((a, b) => a - b).join('-');
+                    const met = meetCount[pk] || 0;
+                    if (pendingPair.has(pk)) continue;                           // ya tienen un partido pendiente entre sí
+                    if (met >= (doubleGroups.has(String(t1.group)) ? 2 : 1)) continue;   // ya se enfrentaron (1 vuelta, o 2 si hay doble vuelta)
                     const validSlots = t1.availability
                         .filter(slot => t2.availability.includes(slot) && (noCourtsConfig || (weeklyCourts[slot] || 0) > 0)
                             && (dateForSlotInWeek(slot, playWeek) || 0) > genNow)
                         .sort((a, b) => slotRank(a) - slotRank(b));             // ★ preferentes primero, luego día/hora
-                    if (validSlots.length > 0) possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length, group: t1.group });
+                    if (validSlots.length > 0) possibleMatchups.push({ t1, t2, validSlots, difficulty: validSlots.length, group: t1.group, met });
                 }
             }
             // Reparto POR RONDAS siguiendo el orden de rotación: en cada ronda, cada grupo (por
@@ -2745,7 +2788,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             // TODAS las pistas). Dentro de cada grupo van antes las parejas con menos horas
             // compatibles (las difíciles de cuadrar no se quedan fuera).
             const byGroup = new Map(groupOrder.map(g => [g, []]));
-            possibleMatchups.sort((a, b) => a.difficulty - b.difficulty).forEach(m => { byGroup.get(m.group)?.push(m); });
+            // Primero los cruces que aún no se han jugado; la vuelta (doble vuelta) después
+            possibleMatchups.sort((a, b) => (a.met - b.met) || (a.difficulty - b.difficulty)).forEach(m => { byGroup.get(m.group)?.push(m); });
             const assignedPerSlot = {};
             // Pádel: quien juega en dos parejas no puede tener dos partidos a la misma hora.
             // Se compara por cuenta y por nombre (nombre y apellido, al menos dos palabras).
@@ -2764,9 +2808,13 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             const clashes = (match, slot) => !isTennis && (teamsAtSlot[slot] || []).some(o => sharePerson(o, match.t1) || sharePerson(o, match.t2));
             // Horas que comparten pista ("17:00|17:30"): por cada día, una sola bolsa de pistas
             // = las pistas de la hora que más tenga, menos los partidos pendientes en cualquiera de las dos.
-            const shareGroupOf = {};
-            (appSettings?.shared_hours || []).forEach(g => g.split('|').forEach(h => { shareGroupOf[h] = g; }));
-            const poolKey = (slot) => { const [d, h] = (slot || '').split('_'); return shareGroupOf[h] ? `${d}|${shareGroupOf[h]}` : null; };
+            const shareGroupOf = {};   // "mar@20:30" o "@20:30" → grupo
+            (appSettings?.shared_hours || []).forEach(g => { const x = parseShare(g); x.hours.forEach(h => { shareGroupOf[`${x.day}@${h}`] = g; }); });
+            const poolKey = (slot) => {
+                const [d, h] = (slot || '').split('_');
+                const g = shareGroupOf[`${d}@${h}`] || shareGroupOf[`@${h}`];
+                return g ? `${d}|${g}` : null;
+            };
             const poolLeft = {};
             const poolCap = {};
             if (!noCourtsConfig) {
