@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from '
 import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search, BellRing } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
-import { useData, generateSlots, parseSlotId, resolvePlayWeekStart, dateForSlotInWeek, formatWeekRange, toYMD } from '../context/DataContext';
+import { useData, generateSlots, parseSlotId, resolvePlayWeekStart, dateForSlotInWeek, formatWeekRange, toYMD, isConfirmedForWeek } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { useNotifications } from '../context/NotificationContext';
@@ -422,7 +422,8 @@ const SearchBox = ({ value, onChange, placeholder }) => (
 
 const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
     // ── Pádel: solicitudes de unión pendientes (las puede resolver también un monitor) ──
-    const { pairRequests, respondPairRequest, renameTeam, reloadData } = useData();
+    const { pairRequests, respondPairRequest, renameTeam, reloadData, appSettings: appSettingsTV } = useData();
+    const playWeekTV = resolvePlayWeekStart(appSettingsTV?.play_week_start);
     const pendingPairs = useMemo(() => (isAdmin && !isTennis) ? (pairRequests || []).filter(r => teams.some(t => t.id === r.team_id)) : [], [pairRequests, teams, isAdmin, isTennis]);
     const [pairBusy, setPairBusy] = useState(false);
     const answerPair = async (req, accept) => {
@@ -807,6 +808,9 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                                         {(team.user_id || team.user_id_2) && movingTeamId !== team.id && (
                                             <button onClick={() => openMove(team)} className="text-[10px] underline" style={{ color: 'var(--text-3)' }} title="Se registró en el deporte o la categoría que no era: pásalo al correcto">cambiar de deporte</button>
                                         )}
+                                        {!team.week_off && (isConfirmedForWeek(team, playWeekTV)
+                                            ? <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ color: '#00ff87', border: '1px solid rgba(0,255,135,0.3)' }} title="Ha confirmado sus horas para la semana de juego">horas ✓</span>
+                                            : <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ color: '#FFC107', border: '1px solid rgba(255,193,7,0.4)' }} title="No ha confirmado sus horas para la semana de juego">sin confirmar</span>)}
                                         <button onClick={() => toggleBaja(team)} className="text-[10px] px-2 py-0.5 rounded-full font-bold"
                                             title={team.week_off ? 'No entra en las jornadas. Pulsa para volver a incluirlo.' : 'Darlo de baja del generador (no entrará en las jornadas)'}
                                             style={team.week_off ? { background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.35)' } : { background: 'rgba(255,255,255,0.04)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
@@ -1316,6 +1320,20 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                     </div>
                 </div>
             )}
+            {/* Horas de esta semana: confirmadas o pendientes de confirmar */}
+            {team && !team.week_off && (isConfirmedForWeek(team, playWeek) ? (
+                <div className="p-3 rounded-xl flex items-center gap-2 text-sm" style={{ background: 'rgba(0,255,135,0.07)', border: '1px solid rgba(0,255,135,0.3)', color: '#00ff87' }}>
+                    <span>✓</span> <span>Horas confirmadas para la semana {formatWeekRange(playWeek)}.</span>
+                </div>
+            ) : (
+                <div className="p-4 rounded-xl" style={{ background: 'rgba(255,193,7,0.10)', border: '1px solid rgba(255,193,7,0.45)' }}>
+                    <p className="font-bold text-white text-sm">Confirma tus horas para la semana {formatWeekRange(playWeek)}</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>Cada semana hay que confirmarlas: si no, no entras en la jornada. Revisa las horas de abajo y pulsa el botón (aunque no cambies nada). Si esta semana no puedes, marca "Esta semana no puedo jugar".</p>
+                    {!isLocked && <Button onClick={save} disabled={saving || selectedAvailability.length === 0} className="mt-3 text-sm py-2">{saving ? 'Guardando…' : (hasUnsavedChanges ? 'Guardar y confirmar mis horas' : 'Confirmar mis horas')}</Button>}
+                    {!isLocked && selectedAvailability.length === 0 && <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>Marca abajo al menos una hora.</p>}
+                </div>
+            ))}
+
             {/* Deadline banner */}
             {isLocked && (
                 <div className="p-4 rounded-xl flex items-center gap-3" style={{ background: 'rgba(229,57,53,0.12)', border: '1px solid rgba(229,57,53,0.4)' }}>
@@ -1706,6 +1724,30 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                             {groupLabel(g)}{dbl.has(g) ? ' ✓' : ''}
                                         </button>
                                     ))}
+                                </div>
+                            );
+                        })()}
+                        {(() => {
+                            const req = appSettings?.require_weekly_confirm !== false;
+                            const wk = resolvePlayWeekStart(appSettings?.play_week_start);
+                            const pend = (teams || []).filter(t => !t.week_off && t.group && !isConfirmedForWeek(t, wk)).length;
+                            const sendReminder = async () => {
+                                const ok = await showConfirm({ title: 'Recordar que confirmen sus horas', message: `Se manda un aviso (campana y móvil) a quien aún no ha confirmado sus horas para la semana ${formatWeekRange(wk)}, en tenis y pádel. También sale solo cada miércoles por la mañana.`, confirmText: 'Enviar', variant: 'info' });
+                                if (!ok) return;
+                                const { data, error } = await supabase.rpc('admin_send_availability_reminders');
+                                showConfirm(error ? { title: 'No se pudo enviar', message: error.message, cancelText: null, variant: 'warning' }
+                                    : { title: 'Enviado', message: `Recordatorio enviado a ${data} cuenta(s).`, cancelText: null, variant: 'info' });
+                            };
+                            return (
+                                <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+                                    <button onClick={async () => { try { await updateAppSettings('require_weekly_confirm', !req); } catch (e) { showConfirm({ title: 'No se pudo cambiar', message: e?.message || String(e), cancelText: null, variant: 'warning' }); } }}
+                                        className="px-2 py-0.5 rounded-md font-bold"
+                                        style={req ? { background: 'rgba(0,212,255,0.15)', color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.5)' } : { color: 'var(--text-3)', border: '1px solid var(--border)' }}
+                                        title="Si está activado, solo entran en la jornada quienes confirmaron sus horas para esta semana">
+                                        Solo con horas confirmadas {req ? '✓' : '✗'}
+                                    </button>
+                                    <span style={{ color: pend ? '#FFC107' : 'var(--text-3)' }}>{pend} sin confirmar</span>
+                                    {pend > 0 && <button onClick={sendReminder} className="px-2 py-0.5 rounded-md underline" style={{ color: 'var(--text-2)' }}>Recordárselo ahora</button>}
                                 </div>
                             );
                         })()}
@@ -2697,7 +2739,10 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         const active = teams.filter(t => !t.week_off);
         const ungrouped = active.filter(t => !t.group);
         const withPending = active.filter(t => t.group && pendingByTeam.has(t.id));
-        const eligible = active.filter(t => t.group && !pendingByTeam.has(t.id));
+        const requireConfirm = appSettings?.require_weekly_confirm !== false;
+        const genWeek = resolvePlayWeekStart(appSettings?.play_week_start);
+        const unconfirmed = requireConfirm ? active.filter(t => t.group && !pendingByTeam.has(t.id) && !isConfirmedForWeek(t, genWeek)) : [];
+        const eligible = active.filter(t => t.group && !pendingByTeam.has(t.id) && (!requireConfirm || isConfirmedForWeek(t, genWeek)));
         const weekOffCount = teams.length - active.length;
 
         // ── Rotación de grupos ──────────────────────────────────────────────────
@@ -2736,6 +2781,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 (noCourtsAtAll ? `\n• ⚠️ No hay pistas configuradas: no se limita el nº de partidos por hora.` : '') +
                 (withPending.length ? `\n• ${withPending.length} con partido pendiente no entran (registra su resultado primero, o elimínalo si no se va a jugar).` : '') +
                 (ungrouped.length ? `\n• ${ungrouped.length} sin grupo no entran (asígnales grupo en "Jugadores").` : '') +
+                (unconfirmed.length ? `\n• ${unconfirmed.length} no han confirmado sus horas esta semana y no entran: ${unconfirmed.slice(0, 12).map(t => t.name).join(', ')}${unconfirmed.length > 12 ? '…' : ''}.` : '') +
                 (weekOffCount ? `\n• ${weekOffCount} con semana libre.` : '') +
                 `\nLas pistas ya ocupadas por partidos pendientes se descuentan. La jornada quedará en borrador hasta que la publiques.`,
             confirmText: 'Generar jornada', variant: 'info'
@@ -2866,6 +2912,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 (perGroup ? `\n${perGroup}.` : '') +
                 (withPending.length ? ` ${withPending.length} ya tenían partido pendiente.` : '') +
                 (ungrouped.length ? ` ${ungrouped.length} sin grupo.` : '') +
+                (unconfirmed.length ? ` ${unconfirmed.length} sin confirmar sus horas.` : '') +
                 (weekOffCount ? ` ${weekOffCount} con semana libre.` : ''));
             setActiveTab('schedule');
         } catch (e) {

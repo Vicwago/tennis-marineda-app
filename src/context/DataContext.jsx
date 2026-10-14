@@ -109,6 +109,12 @@ export const formatWeekRange = (weekStart) => {
     return sameMonth ? `del lunes ${weekStart.getDate()} al domingo ${end.getDate()} de ${m(end)}`
         : `del lunes ${weekStart.getDate()} de ${m(weekStart)} al domingo ${end.getDate()} de ${m(end)}`;
 };
+// ¿Tiene esta ficha las horas confirmadas para la semana de juego? (vale desde el lunes anterior)
+export const isConfirmedForWeek = (team, weekStart) => {
+    if (!team?.availability_confirmed_at || !weekStart) return false;
+    const from = new Date(weekStart); from.setDate(from.getDate() - 7);
+    return new Date(team.availability_confirmed_at) >= from;
+};
 export const formatMatchDate = (iso) => {
     if (!iso) return null;
     const d = new Date(iso);
@@ -378,7 +384,8 @@ export const DataProvider = ({ children }) => {
                         draft_first_group: s[`draft_first_group__${suffix}`] || '',
                         play_week_start: s[`play_week_start__${suffix}`] || '',
                         shared_hours: parseList(s[`shared_hours__${suffix}`]),
-                        double_round_groups: parseList(s[`double_round_groups__${suffix}`])
+                        double_round_groups: parseList(s[`double_round_groups__${suffix}`]),
+                        require_weekly_confirm: s[`require_weekly_confirm__${suffix}`] !== 'false'   // por defecto, sí
                     });
                 }
                 setLoadedKey(myKey);
@@ -440,7 +447,7 @@ export const DataProvider = ({ children }) => {
         const slots = currentSlots.filter(s => availabilitySlotIds.includes(s.id)).map(s => ({ day: s.day, hour: s.hour }));
         const { error } = await supabase.rpc('set_team_availability', { p_team_id: teamId, p_slots: slots });
         if (error) throw new Error(error.message || 'No se pudo guardar la disponibilidad.');
-        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, availability: availabilitySlotIds } : t));
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, availability: availabilitySlotIds, availability_confirmed_at: new Date().toISOString() } : t));
     }, [currentSlots]);
 
     // Ref siempre actualizada de courtsMeta (para no perder/clavar caducidades al hacer upsert)
@@ -1280,7 +1287,7 @@ export const DataProvider = ({ children }) => {
     }, []);
 
     // Ajustes por ámbito (deporte/categoría). Las listas se guardan como JSON.
-    const SCOPED_SETTINGS = ['availability_locked', 'availability_deadline_label', 'fixed_hours', 'preferred_slots', 'last_first_group', 'draft_first_group', 'play_week_start', 'shared_hours', 'double_round_groups'];
+    const SCOPED_SETTINGS = ['availability_locked', 'availability_deadline_label', 'fixed_hours', 'preferred_slots', 'last_first_group', 'draft_first_group', 'play_week_start', 'shared_hours', 'double_round_groups', 'require_weekly_confirm'];
     const updateAppSettings = useCallback(async (key, value) => {
         try {
             const physicalKey = SCOPED_SETTINGS.includes(key) ? scopedSettingKey(key) : key;
