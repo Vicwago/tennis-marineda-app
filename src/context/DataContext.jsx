@@ -649,7 +649,7 @@ export const DataProvider = ({ children }) => {
 
     // ─── CRUD individual de partidos (panel admin) ───────────────────────
     // Crea un partido manual entre dos equipos en un slot concreto
-    const createMatch = async ({ team1_id, team2_id, slot_id }) => {
+    const createMatch = async ({ team1_id, team2_id, slot_id, date: manualDate }) => {
         try {
             // Mismo tratamiento que los generados: fecha real y nº de pista (tras los pendientes de esa hora)
             const pendingSameSlot = matchesRef.current.filter(m => !m.completed && !m.postponed && (m.slot || m.slot_id) === slot_id).length;
@@ -659,7 +659,7 @@ export const DataProvider = ({ children }) => {
                 sport,
                 category: sport === 'tennis' ? tennisCategory : null,
                 slot_id,
-                date: (() => {
+                date: manualDate || (() => {
                     // Si hay partidos pendientes de hoy en adelante (jornada publicada o en borrador),
                     // el nuevo va en la semana del último de ellos; si no, en la semana de juego.
                     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -699,7 +699,12 @@ export const DataProvider = ({ children }) => {
             const dbUpdates = {};
             const prevMatch = matchesRef.current.find(m => m.id === matchId);
             const slotChanged = updates.slot_id !== undefined && updates.slot_id !== (prevMatch?.slot_id ?? prevMatch?.slot);
-            if (updates.slot_id !== undefined && (slotChanged || prevMatch?.postponed || !prevMatch?.date)) {
+            if (updates.date) {
+                // Fecha elegida a mano por el monitor (p. ej. lo adelantan a este domingo)
+                dbUpdates.slot_id = updates.slot_id ?? prevMatch?.slot_id ?? prevMatch?.slot;
+                dbUpdates.date = updates.date;
+                dbUpdates.postponed = false;
+            } else if (updates.slot_id !== undefined && (slotChanged || prevMatch?.postponed || !prevMatch?.date)) {
                 dbUpdates.slot_id = updates.slot_id;
                 // Reprogramar: misma semana que tenía el partido (si aún no ha pasado esa hora);
                 // si no, la próxima vez que caiga. Y se quita el estado APLAZADO.
@@ -709,6 +714,13 @@ export const DataProvider = ({ children }) => {
             }
             if (updates.team1_id !== undefined) dbUpdates.team1_id = updates.team1_id;
             if (updates.team2_id !== undefined) dbUpdates.team2_id = updates.team2_id;
+            // ¿Cambia algo de verdad? (Guardar sin tocar nada no debe avisar a los jugadores)
+            const sameTime = (a, b) => (a ? new Date(a).getTime() : null) === (b ? new Date(b).getTime() : null);
+            const changed = (dbUpdates.slot_id !== undefined && dbUpdates.slot_id !== (prevMatch?.slot_id ?? prevMatch?.slot))
+                || (dbUpdates.date !== undefined && !sameTime(dbUpdates.date, prevMatch?.date))
+                || (dbUpdates.postponed === false && prevMatch?.postponed)
+                || (dbUpdates.team1_id !== undefined && dbUpdates.team1_id !== prevMatch?.t1?.id)
+                || (dbUpdates.team2_id !== undefined && dbUpdates.team2_id !== prevMatch?.t2?.id);
 
             const { data, error } = await supabase
                 .from('matches')
@@ -723,8 +735,11 @@ export const DataProvider = ({ children }) => {
 
             // Notificación de cambio — solo si el partido ya está publicado (un borrador se
             // retoca en silencio; el aviso saldrá al publicar).
-            if (processed.published) try {
-                const timeStr = slotTimeLabel(processed.slot_id);
+            if (processed.published && changed) try {
+                const d = processed.date ? new Date(processed.date) : null;
+                const timeStr = d && !isNaN(d)
+                    ? `${d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })} a las ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+                    : slotTimeLabel(processed.slot_id);
                 const before = matchesRef.current.find(m => m.id === matchId);
                 const prevIds = new Set([before?.t1?.id, before?.t2?.id].filter(Boolean));
                 const nowIds = new Set([processed.t1?.id, processed.t2?.id].filter(Boolean));

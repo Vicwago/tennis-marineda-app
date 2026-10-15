@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from '
 import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search, BellRing, Printer } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
-import { useData, generateSlots, parseSlotId, resolvePlayWeekStart, dateForSlotInWeek, formatWeekRange, toYMD, isConfirmedForWeek } from '../context/DataContext';
+import { useData, generateSlots, parseSlotId, resolvePlayWeekStart, dateForSlotInWeek, formatWeekRange, toYMD, isConfirmedForWeek, mondayOf, nextDateForSlot } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { useNotifications } from '../context/NotificationContext';
@@ -480,7 +480,7 @@ const SearchBox = ({ value, onChange, placeholder }) => (
     </div>
 );
 
-const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
+const TeamsView = memo(({ teams, pendingTeamIds, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
     // ── Pádel: solicitudes de unión pendientes (las puede resolver también un monitor) ──
     const { pairRequests, respondPairRequest, renameTeam, reloadData, appSettings: appSettingsTV } = useData();
     const playWeekTV = resolvePlayWeekStart(appSettingsTV?.play_week_start);
@@ -591,6 +591,9 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
     };
     const [selectedGroup, setSelectedGroup] = useState('Todos');
     const [query, setQuery] = useState('');
+    // Monitores: quién puede a una hora concreta (para llenar una pista que ha quedado libre)
+    const [slotFilter, setSlotFilter] = useState('');
+    const [onlyFree, setOnlyFree] = useState(false);
     const [addOpen, setAddOpen] = useState(false);
     const [addName, setAddName] = useState('');
     const [addGroup, setAddGroup] = useState('');
@@ -605,11 +608,13 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
     // ⚡ useMemo: no recalcular en cada render del padre
     const groups = useMemo(() => ['Todos', ...[...new Set(teams.map(t => t.group).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true }))], [teams]);
     // Con algo escrito en la lupa se busca en TODOS los grupos
-    const filteredTeams = useMemo(
-        () => query.trim() ? teams.filter(t => matchesSearch(t.name, query))
-            : selectedGroup === 'Todos' ? teams : teams.filter(t => t.group === selectedGroup),
-        [teams, selectedGroup, query]
-    );
+    const filteredTeams = useMemo(() => {
+        let list = query.trim() ? teams.filter(t => matchesSearch(t.name, query))
+            : selectedGroup === 'Todos' ? teams : teams.filter(t => t.group === selectedGroup);
+        if (slotFilter) list = list.filter(t => (t.availability || []).includes(slotFilter) && !t.week_off);
+        if (onlyFree) list = list.filter(t => !pendingTeamIds?.has(t.id));
+        return list;
+    }, [teams, selectedGroup, query, slotFilter, onlyFree, pendingTeamIds]);
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -628,11 +633,25 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                         onChange={(e) => setSelectedGroup(e.target.value)}
                         disabled={!!query.trim()}
                         title={query.trim() ? 'Buscando en todos los grupos' : undefined}
-                        className="cyber-input text-sm rounded-lg p-2.5 flex-1 md:w-48"
+                        className="cyber-input text-sm rounded-lg p-2.5 flex-1 min-w-[7rem] md:w-48"
                         style={query.trim() ? { opacity: 0.5 } : undefined}
                     >
                         {groups.map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
+                    {isAdmin && (
+                        <select value={slotFilter} onChange={(e) => setSlotFilter(e.target.value)}
+                            className="cyber-input text-sm rounded-lg p-2.5 flex-1 min-w-[12rem] md:w-52"
+                            title="Ver solo quién puede jugar a esa hora">
+                            <option value="">Cualquier hora</option>
+                            {currentSlots.map(s => <option key={s.id} value={s.id}>Puede: {s.day} {s.hour}</option>)}
+                        </select>
+                    )}
+                    {isAdmin && (
+                        <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none px-1" style={{ color: 'var(--text-2)' }}>
+                            <input type="checkbox" checked={onlyFree} onChange={e => setOnlyFree(e.target.checked)} className="w-4 h-4 accent-cyan-400" />
+                            Solo sin partido pendiente
+                        </label>
+                    )}
                     {isAdmin && (
                         <>
                             <Button variant="primary" size="sm" onClick={() => setAddOpen(v => !v)} title="Añadir un jugador a mano">
@@ -703,6 +722,14 @@ const TeamsView = memo(({ teams, isAdmin, isTennis, setShowImportModal, editingT
                 </div>
             )}
 
+            {isAdmin && (slotFilter || onlyFree) && (
+                <p className="text-xs px-1" style={{ color: 'var(--text-2)' }}>
+                    {filteredTeams.length} {isTennis ? 'jugador(es)' : 'pareja(s)'}
+                    {slotFilter ? ` que pueden el ${(currentSlots.find(s => s.id === slotFilter)?.day || '').toLowerCase()} a las ${currentSlots.find(s => s.id === slotFilter)?.hour || ''}` : ''}
+                    {onlyFree ? ' sin partido pendiente' : ''}{!query.trim() && selectedGroup !== 'Todos' ? ` · grupo ${selectedGroup}` : ''}.
+                    {' '}Para emparejarlos, "Añadir partido" en Jornada.
+                </p>
+            )}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {filteredTeams.map(team => (
                     <Card key={team.id} className="p-5 relative hover:shadow-md transition-shadow group">
@@ -1538,6 +1565,10 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
         return [...list].sort((a, b) => isMine(b) - isMine(a));
     }, [matches, myTeamIds, isAdmin]);
     const drafts = useMemo(() => matches.filter(m => !m.completed && !m.published), [matches]);
+    const [matchQuery, setMatchQuery] = useState('');
+    const shownMatches = useMemo(() => matchQuery.trim()
+        ? activeMatches.filter(m => matchesSearch(`${m.t1?.name || ''} ${m.t2?.name || ''}`, matchQuery))
+        : activeMatches, [activeMatches, matchQuery]);
     const label = isTennis ? 'jugadores' : 'parejas';
 
     // ─── Rotación de grupos: qué grupo va primero en esta jornada ───
@@ -1595,7 +1626,35 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
     const [editTeam1, setEditTeam1] = useState('');
     const [editTeam2, setEditTeam2] = useState('');
     const [editSlot, setEditSlot] = useState('');
+    const [editDate, setEditDate] = useState('');   // YYYY-MM-DD; se rellena solo, el monitor la puede cambiar
     const [savingEdit, setSavingEdit] = useState(false);
+    // Semana en la que caen los partidos nuevos: la de los pendientes (de hoy en adelante) o la de juego
+    const baseWeekForNew = useCallback(() => {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const ds = (matches || []).filter(m => !m.completed && !m.postponed && m.date && new Date(m.date) >= today).map(m => new Date(m.date));
+        return ds.length ? mondayOf(new Date(Math.max(...ds))) : resolvePlayWeekStart(appSettings?.play_week_start);
+    }, [matches, appSettings?.play_week_start]);
+    const autoDateFor = useCallback((slotId, week) => {
+        const w = dateForSlotInWeek(slotId, week);
+        const d = w && w > new Date() ? w : nextDateForSlot(slotId);
+        return d ? toYMD(d) : '';
+    }, []);
+    const DAY_CODES_BY_JS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+    const changeEditSlot = (slotId) => {
+        setEditSlot(slotId);
+        if (!slotId) return;
+        // Misma semana que la fecha que había; si no había, la de la jornada
+        const week = editDate ? mondayOf(new Date(editDate + 'T12:00:00')) : baseWeekForNew();
+        setEditDate(autoDateFor(slotId, week));
+    };
+    const changeEditDate = (ymd) => {
+        setEditDate(ymd);
+        if (!ymd || !editSlot) return;
+        // El día de la semana del horario sigue a la fecha (la hora se mantiene)
+        const code = DAY_CODES_BY_JS[new Date(ymd + 'T12:00:00').getDay()];
+        const hour = editSlot.split('_')[1];
+        if (hour) setEditSlot(`${code}_${hour}`);
+    };
 
     const openCreateMatch = useCallback(() => {
         setEditorMode('create');
@@ -1603,7 +1662,8 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
         setEditTeam1('');
         setEditTeam2('');
         setEditSlot(currentSlots[0]?.id || '');
-    }, [currentSlots]);
+        setEditDate(currentSlots[0]?.id ? autoDateFor(currentSlots[0].id, baseWeekForNew()) : '');
+    }, [currentSlots, autoDateFor, baseWeekForNew]);
 
     const openEditMatch = useCallback((match) => {
         setEditorMode('edit');
@@ -1611,7 +1671,8 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
         setEditTeam1(String(match.t1?.id || match.team1_id || ''));
         setEditTeam2(String(match.t2?.id || match.team2_id || ''));
         setEditSlot(match.slot || match.slot_id || '');
-    }, []);
+        setEditDate(match.date && !match.postponed ? toYMD(new Date(match.date)) : (match.slot || match.slot_id ? autoDateFor(match.slot || match.slot_id, resolvePlayWeekStart(appSettings?.play_week_start)) : ''));
+    }, [autoDateFor, appSettings?.play_week_start]);
 
     const closeEditor = useCallback(() => {
         setEditorMode(null);
@@ -1638,15 +1699,25 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
             showConfirm({ title: 'Ya tienen partido pendiente', message: `${dup.t1?.name} y ${dup.t2?.name} ya tienen un partido pendiente (${s ? s.day + ' ' + s.hour : 'sin hora'}${dup.postponed ? ' · APLAZADO' : ''}). Edítalo en vez de crear otro.`, cancelText: null, variant: 'warning' });
             return;
         }
+        // Fecha y hora reales: la fecha elegida + la hora del horario
+        let dateIso;
+        if (editDate) {
+            const [hh, mm] = (editSlot.split('_')[1] || '').split(':').map(Number);
+            const d = new Date(editDate + 'T00:00:00');
+            d.setHours(hh || 0, mm || 0, 0, 0);
+            if (!isNaN(d)) dateIso = d.toISOString();
+        }
         setSavingEdit(true);
         try {
             if (editorMode === 'create') {
-                await createMatch({ team1_id: a, team2_id: b, slot_id: editSlot });
+                await createMatch({ team1_id: a, team2_id: b, slot_id: editSlot, date: dateIso });
             } else if (editorMode === 'edit' && editorMatch) {
+                const prevIso = editorMatch.date && !editorMatch.postponed ? new Date(editorMatch.date).toISOString() : null;
                 await updateMatch(editorMatch.id, {
                     team1_id: a,
                     team2_id: b,
-                    slot_id: editSlot
+                    slot_id: editSlot,
+                    ...(dateIso && dateIso !== prevIso ? { date: dateIso } : {})
                 });
             }
             closeEditor();
@@ -1655,7 +1726,7 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
             showConfirm({ title: 'Error', message: 'No se pudo guardar: ' + msg, cancelText: null, variant: 'danger' });
             setSavingEdit(false);
         }
-    }, [editorMode, editorMatch, editTeam1, editTeam2, editSlot, matches, currentSlots, createMatch, updateMatch, closeEditor, showConfirm]);
+    }, [editorMode, editorMatch, editTeam1, editTeam2, editSlot, editDate, matches, currentSlots, createMatch, updateMatch, closeEditor, showConfirm]);
 
     const handleDeleteMatch = useCallback(async () => {
         if (!editorMatch) return;
@@ -1852,6 +1923,15 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                         </button>
                     )}
                 </div>
+                {activeMatches.length > 3 && (
+                    <div className="flex items-center gap-3">
+                        <SearchBox value={matchQuery} onChange={setMatchQuery} placeholder={isTennis ? 'Buscar partido por jugador' : 'Buscar partido por jugador o pareja'} />
+                        {matchQuery.trim() && <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>{shownMatches.length} de {activeMatches.length}</span>}
+                    </div>
+                )}
+                {matchQuery.trim() && shownMatches.length === 0 && (
+                    <p className="text-sm text-center py-6" style={{ color: 'var(--text-3)' }}>Ningún partido pendiente con ese nombre.</p>
+                )}
 
                 {activeMatches.length === 0 && (
                     <div className="text-center py-16 rounded-2xl" style={{ border: '2px dashed var(--border)', background: 'rgba(255,255,255,0.02)' }}>
@@ -1866,7 +1946,7 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                 )}
 
                 <div className="grid gap-4 md:grid-cols-2">
-                    {activeMatches.map(match => {
+                    {shownMatches.map(match => {
                         const slotDetails = currentSlots.find(s => s.id === match.slot) || parseSlotId(match.slot);
                         const mine = myTeamIds.has(match.t1?.id) || myTeamIds.has(match.t2?.id);
                         return (
@@ -2047,15 +2127,23 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                 <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-3)' }}>Horario</label>
                                 <select
                                     value={editSlot}
-                                    onChange={e => setEditSlot(e.target.value)}
+                                    onChange={e => changeEditSlot(e.target.value)}
                                     className="cyber-input text-sm w-full h-10 cursor-pointer"
                                     style={{ padding: '0 28px 0 0.75rem' }}
                                 >
                                     <option value="">— Selecciona —</option>
+                                    {editSlot && !currentSlots.some(s => s.id === editSlot) && (() => { const p = parseSlotId(editSlot); return <option value={editSlot}>{p ? `${p.day} ${p.hour}` : editSlot}</option>; })()}
                                     {currentSlots.map(s => (
                                         <option key={s.id} value={s.id}>{s.day} {s.hour}</option>
                                     ))}
                                 </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-3)' }}>Fecha</label>
+                                <input type="date" value={editDate} onChange={e => changeEditDate(e.target.value)}
+                                    className="cyber-input text-sm w-full h-10" style={{ padding: '0 0.75rem' }} />
+                                <p className="text-[11px] mt-1" style={{ color: 'var(--text-3)' }}>Se pone sola según la jornada. Cámbiala si se juega otro día (p. ej. lo adelantan a este domingo): el día del horario se ajusta solo.</p>
                             </div>
                         </div>
 
@@ -2630,6 +2718,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     useEffect(() => { refreshBugCount(); }, [refreshBugCount]);
     // Lo que ve un jugador (y el modo "Ver como Jugador"): nunca los borradores
     const visibleMatches = useMemo(() => (isAdmin ? matches : matches.filter(m => m.published || m.completed)), [isAdmin, matches]);
+    // Fichas con un partido pendiente (para el filtro "Solo sin partido pendiente" de Jugadores)
+    const pendingTeamIds = useMemo(() => new Set((data?.matches || []).filter(m => !m.completed).flatMap(m => [m.t1?.id, m.t2?.id]).filter(Boolean)), [data?.matches]);
     const isTennis = sport === 'tennis';
 
     // Initialize Role from Auth
@@ -3230,7 +3320,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             <div className="w-full max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} availabilitySlots={availabilitySlots} sport={sport} showConfirm={showConfirm} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} publishSchedule={publishSchedule} discardDrafts={discardDrafts} onChatClick={(match) => setChatMatch(match)} categoryLabel={isTennis ? (tennisCategory === 'juveniles' ? 'Tenis juveniles' : 'Tenis adultos') : 'Pádel'} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} onLinkAccount={linkTeamAccount} onUnlinkAccount={unlinkTeamAccount} onToggleWeekOff={updateWeekOff} listUsers={listUsers} showConfirm={showConfirm} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} pendingTeamIds={pendingTeamIds} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} onLinkAccount={linkTeamAccount} onUnlinkAccount={unlinkTeamAccount} onToggleWeekOff={updateWeekOff} listUsers={listUsers} showConfirm={showConfirm} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} sharedHours={appSettings?.shared_hours || []} onSaveSharedHours={(list) => updateAppSettings('shared_hours', list)} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esos dos jugadores ya tienen otro partido pendiente entre sí. Registra o elimina ese partido antes de reabrir este.' : (e?.message || String(e)); showConfirm({ title: 'No se pudo reabrir', message: msg, cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={teams} isAdmin={isAdmin} loading={loading} />}
