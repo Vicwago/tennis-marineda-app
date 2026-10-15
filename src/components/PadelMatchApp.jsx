@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 // xlsx se importa bajo demanda dentro de handleFileUpload (evita ~400 KB en la carga inicial)
-import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search, BellRing } from 'lucide-react';
+import { Calendar, Trophy, Users, Activity, RefreshCw, MapPin, FileSpreadsheet, Upload, ChevronDown, ChevronRight, Clock, LogOut, Home, User, Settings, Menu, X, Newspaper, Bell, MessageSquare, BarChart2, History, Edit3, Plus, Trash2, Sun, Moon, LifeBuoy, Search, BellRing, Printer } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 import { useGame } from '../context/GameContext';
 import { useData, generateSlots, parseSlotId, resolvePlayWeekStart, dateForSlotInWeek, formatWeekRange, toYMD, isConfirmedForWeek } from '../context/DataContext';
@@ -49,6 +49,66 @@ const DAY_CODES = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 const parseShare = (g) => { const [a, b] = String(g).includes('@') ? String(g).split('@') : ['', String(g)]; return { day: a, hours: b.split('|') }; };
 // "1" → "Grupo 1"; "Grupo 1" / "General" → tal cual (evita "Grupo Grupo 1")
 const groupLabel = (g) => /^\d+$/.test(String(g)) ? `Grupo ${g}` : String(g);
+
+// ─── Hoja de resultados para imprimir (petición de Braulio) ───────────────────
+// Una hoja por jornada, ordenada por día y hora, con huecos para apuntar el marcador en la
+// cafetería. Los monitores luego pasan los resultados a la app.
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const printResultSheet = ({ matches, teams, isTennis, categoryLabel }) => {
+    const pending = matches.filter(m => !m.completed);
+    const published = pending.filter(m => m.published);
+    const list = published.length ? published : pending;
+    if (!list.length) return false;
+    const groupOf = new Map((teams || []).map(t => [t.id, t.group]));
+    const dated = list.filter(m => m.date && !m.postponed).sort((a, b) => new Date(a.date) - new Date(b.date) || (Number(a.court) || 0) - (Number(b.court) || 0));
+    const postponed = list.filter(m => !m.date || m.postponed);
+    const who = isTennis ? 'Jugador' : 'Pareja';
+    const hhmm = (d) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const dayKey = (d) => d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+    const row = (m, time) => `<tr>
+        <td class="c">${escHtml(time)}</td><td class="c">${escHtml(m.court || '')}</td>
+        <td class="c">${escHtml(groupOf.get(m.t1?.id) ? groupLabel(groupOf.get(m.t1?.id)).replace('Grupo ', 'G') : '')}</td>
+        <td>${escHtml(m.t1?.name)}</td><td>${escHtml(m.t2?.name)}</td>
+        <td class="res"></td><td class="win"></td><td class="c"><span class="box"></span></td></tr>`;
+    const head = `<colgroup><col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:20%"><col style="width:20%"><col style="width:21%"><col style="width:12%"><col style="width:8%"></colgroup><tr><th>Hora</th><th>Pista</th><th>Grupo</th><th>${who} 1</th><th>${who} 2</th><th>Resultado</th><th>Ganador</th><th>Perdedor<br>ganó set</th></tr>`;
+    const byDay = [];
+    dated.forEach(m => { const d = new Date(m.date); const k = dayKey(d); if (!byDay.length || byDay[byDay.length - 1].k !== k) byDay.push({ k, rows: [] }); byDay[byDay.length - 1].rows.push(row(m, hhmm(d))); });
+    const first = dated[0] ? new Date(dated[0].date) : null;
+    let weekTxt = '';
+    if (first) { const mon = new Date(first); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); weekTxt = 'Semana ' + formatWeekRange(mon); }
+    const sections = byDay.map(d => `<h2>${escHtml(d.k.charAt(0).toUpperCase() + d.k.slice(1))}</h2><table>${head}${d.rows.join('')}</table>`).join('')
+        + (postponed.length ? `<h2>Aplazados / sin fecha</h2><table>${head}${postponed.map(m => row(m, (m.slot || m.slot_id || '').replace('_', ' '))).join('')}</table>` : '');
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hoja de resultados · ${escHtml(categoryLabel)}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 16px; font-size: 12px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 10px; }
+  h1 { font-size: 18px; margin: 0; } .sub { font-size: 12px; color: #444; margin-top: 2px; }
+  h2 { font-size: 13px; margin: 14px 0 4px; text-transform: none; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th, td { border: 1px solid #555; padding: 6px 5px; vertical-align: middle; }
+  th { background: #eee; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; }
+  td { height: 30px; } .c { text-align: center; white-space: nowrap; }
+  .box { display: inline-block; width: 12px; height: 12px; border: 1px solid #333; }
+  .note { margin-top: 12px; font-size: 11px; color: #444; }
+  .bar { margin-bottom: 12px; } .bar button { font-size: 14px; padding: 8px 16px; cursor: pointer; }
+  @media print { .bar { display: none; } body { padding: 0; } }
+</style></head><body>
+<div class="bar"><button onclick="window.print()">Imprimir</button></div>
+<header><div><h1>Hoja de resultados · ${escHtml(categoryLabel)}</h1><div class="sub">Escuela de Tenis Marineda${weekTxt ? ' · ' + escHtml(weekTxt) : ''}</div></div>
+<div class="sub">${list.length} partido${list.length !== 1 ? 's' : ''}</div></header>
+${sections}
+<p class="note">Al terminar, apuntad el marcador (ej.: 6-3 4-6 10-8), el ganador y marcad la casilla si el perdedor ganó algún set. Los monitores lo pasan después a la app.</p>
+<script>window.onload = function () { setTimeout(function () { window.print(); }, 300); };</script>
+</body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) return null;   // ventana bloqueada
+    w.document.open(); w.document.write(html); w.document.close();
+    return true;
+};
 
 // --- Sub-components ---
 
@@ -1465,7 +1525,7 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
     );
 });
 
-const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, publishSchedule, discardDrafts, onChatClick, isTennis, appSettings, updateAppSettings, showConfirm }) => {
+const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, publishSchedule, discardDrafts, onChatClick, isTennis, categoryLabel, appSettings, updateAppSettings, showConfirm }) => {
     const { user } = useAuth();
     // Equipo del usuario logueado (para resaltar "Tu partido" y ponerlo el primero)
     const myTeamIds = useMemo(() => new Set((teams || []).filter(t => isMyTeam(t, user?.id)).map(t => t.id)), [teams, user?.id]);
@@ -1777,9 +1837,21 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
             )}
 
             <div className="space-y-4">
-                <h3 className="font-bold text-white text-lg flex items-center gap-2">
-                    <Calendar style={{ color: '#E53935' }} size={20} /> Partidos Pendientes
-                </h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                        <Calendar style={{ color: '#E53935' }} size={20} /> Partidos Pendientes
+                    </h3>
+                    {isAdmin && activeMatches.length > 0 && (
+                        <button onClick={() => {
+                            const r = printResultSheet({ matches, teams, isTennis, categoryLabel });
+                            if (r === null) showConfirm({ title: 'No se pudo abrir la hoja', message: 'El navegador ha bloqueado la ventana nueva. Permite las ventanas emergentes para esta web y vuelve a pulsar.', cancelText: null, variant: 'warning' });
+                        }} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg"
+                            style={{ color: 'var(--text-1, #fff)', border: '1px solid var(--border-hi)', background: 'rgba(255,255,255,0.04)' }}
+                            title="Hoja para imprimir y apuntar los resultados en la cafetería">
+                            <Printer size={14} /> Hoja de resultados
+                        </button>
+                    )}
+                </div>
 
                 {activeMatches.length === 0 && (
                     <div className="text-center py-16 rounded-2xl" style={{ border: '2px dashed var(--border)', background: 'rgba(255,255,255,0.02)' }}>
@@ -3157,7 +3229,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         return (
             <div className="w-full max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} availabilitySlots={availabilitySlots} sport={sport} showConfirm={showConfirm} />}
-                {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} publishSchedule={publishSchedule} discardDrafts={discardDrafts} onChatClick={(match) => setChatMatch(match)} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
+                {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} publishSchedule={publishSchedule} discardDrafts={discardDrafts} onChatClick={(match) => setChatMatch(match)} categoryLabel={isTennis ? (tennisCategory === 'juveniles' ? 'Tenis juveniles' : 'Tenis adultos') : 'Pádel'} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
                 {activeTab === 'teams' && <TeamsView teams={teams} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} onLinkAccount={linkTeamAccount} onUnlinkAccount={unlinkTeamAccount} onToggleWeekOff={updateWeekOff} listUsers={listUsers} showConfirm={showConfirm} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} sharedHours={appSettings?.shared_hours || []} onSaveSharedHours={(list) => updateAppSettings('shared_hours', list)} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esos dos jugadores ya tienen otro partido pendiente entre sí. Registra o elimina ese partido antes de reabrir este.' : (e?.message || String(e)); showConfirm({ title: 'No se pudo reabrir', message: msg, cancelText: null, variant: 'danger' }); } } }} />}
