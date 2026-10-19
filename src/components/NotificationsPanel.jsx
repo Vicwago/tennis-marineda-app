@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Bell, Check, CheckCheck, Calendar, Trophy, MessageSquare, X, BellOff, Users } from 'lucide-react';
+import { Bell, Check, CheckCheck, Calendar, Trophy, MessageSquare, X, BellOff, Users, AlarmClock } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
 
 const timeAgo = (dateStr) => {
@@ -23,6 +23,7 @@ const typeIcon = (type) => {
     if (isPairType(type)) return <Users size={14} />;
     switch (type) {
         case 'match_assigned': return <Calendar size={14} />;
+        case 'match_reminder': return <AlarmClock size={14} />;
         case 'match_updated': return <Calendar size={14} />;
         case 'match_cancelled': return <BellOff size={14} />;
         case 'match_result': return <Trophy size={14} />;
@@ -36,6 +37,7 @@ const typeColor = (type) => {
     if (isPairType(type)) return '#00d4ff';
     switch (type) {
         case 'match_assigned': return 'var(--cyan)';
+        case 'match_reminder': return '#00ff87';
         case 'match_updated': return '#FFC107';
         case 'match_cancelled': return '#ff6b6b';
         case 'match_result': return '#FFC107';
