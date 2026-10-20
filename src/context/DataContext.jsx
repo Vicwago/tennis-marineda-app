@@ -1329,7 +1329,15 @@ export const DataProvider = ({ children }) => {
         const value = group && group.trim() ? group.trim() : null;
         const { error } = await supabase.from('teams').update({ group_name: value }).eq('id', teamId);
         if (error) throw new Error(error.message);
-        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, group_name: value, group: value } : t));
+        // Ponerle grupo a una inscripción pendiente la aprueba (lo hace también la BD)
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, group_name: value, group: value, approved: value ? true : t.approved } : t));
+    }, []);
+
+    // Monitores: aprobar una inscripción nueva (hasta entonces no sale en el ranking ni en las jornadas)
+    const approveTeam = useCallback(async (teamId) => {
+        const { error } = await supabase.from('teams').update({ approved: true }).eq('id', teamId);
+        if (error) throw new Error(error.message);
+        setTeams(prev => prev.map(t => t.id === teamId ? { ...t, approved: true } : t));
     }, []);
 
     // Ajustes por ámbito (deporte/categoría). Las listas se guardan como JSON.
@@ -1503,6 +1511,7 @@ export const DataProvider = ({ children }) => {
         updateWeekOff,
         renameTeam,
         updateTeamGroup,
+        approveTeam,
         updateAppSettings,
         saveMatchResult,
         postponeMatch,
@@ -1543,7 +1552,7 @@ export const DataProvider = ({ children }) => {
         loading,
         currentSlots,
         availabilitySlots
-    }), [teams, matches, courts, courtsMeta, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, adjustCourtCount, updateWeekOff, renameTeam, updateTeamGroup, updateAppSettings, addFixedHour, removeFixedHour, addSpecialSlot, clearExtraCourts, removeSlot, togglePreferredSlot, linkTeamAccount, unlinkTeamAccount, pairRequests, createMyPair, joinPair, respondPairRequest, cancelPairRequest, unlinkPartner, reloadData, reloadPairRequests, dataReady, loadFailed]);
+    }), [teams, matches, courts, courtsMeta, appSettings, loading, currentSlots, availabilitySlots, updateTeamAvailability, updateCourtCount, adjustCourtCount, updateWeekOff, renameTeam, updateTeamGroup, approveTeam, updateAppSettings, addFixedHour, removeFixedHour, addSpecialSlot, clearExtraCourts, removeSlot, togglePreferredSlot, linkTeamAccount, unlinkTeamAccount, pairRequests, createMyPair, joinPair, respondPairRequest, cancelPairRequest, unlinkPartner, reloadData, reloadPairRequests, dataReady, loadFailed]);
 
     return (
         <DataContext.Provider value={value}>
