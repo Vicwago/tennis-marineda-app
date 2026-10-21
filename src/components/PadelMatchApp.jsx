@@ -1907,11 +1907,20 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                             const wk = resolvePlayWeekStart(appSettings?.play_week_start);
                             const pend = (teams || []).filter(t => !t.week_off && t.group && !isConfirmedForWeek(t, wk)).length;
                             const sendReminder = async () => {
-                                const ok = await showConfirm({ title: 'Recordar que confirmen sus horas', message: `Se manda un aviso (campana y móvil) a quien aún no ha confirmado sus horas para la semana ${formatWeekRange(wk)}, en tenis y pádel. También sale solo cada miércoles por la mañana.`, confirmText: 'Enviar', variant: 'info' });
+                                const ok = await showConfirm({ title: 'Recordar que confirmen sus horas', message: `Se manda un aviso (campana y móvil) a quien aún no ha confirmado sus horas para la semana ${formatWeekRange(wk)}, en tenis y pádel. Sale solo cada miércoles a las 10:00; con este botón podéis insistir (como mucho, un aviso cada 3 horas a la misma persona).`, confirmText: 'Enviar', variant: 'info' });
                                 if (!ok) return;
-                                const { data, error } = await supabase.rpc('admin_send_availability_reminders');
+                                const { data, error } = await supabase.rpc('admin_send_availability_reminders_v2');
+                                const hhmm = (d) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                                const sent = data?.sent ?? 0, pending = data?.pending ?? 0, recent = data?.recent ?? 0;
+                                const last = data?.last_at ? new Date(data.last_at) : null;
+                                const again = last ? new Date(last.getTime() + 3 * 3600 * 1000) : null;
+                                const resultMsg = sent > 0
+                                    ? `Recordatorio enviado a ${sent} persona(s) que aún no han confirmado sus horas.` + (recent - sent > 0 ? ` Otras ${recent - sent} ya lo habían recibido hace menos de 3 horas.` : '')
+                                    : pending === 0
+                                        ? 'Todos han confirmado ya sus horas: no hacía falta enviar nada.'
+                                        : `Las ${pending} personas que faltan por confirmar ya recibieron el recordatorio hace menos de 3 horas${last ? ` (salió a las ${hhmm(last)})` : ''}. Para no saturarlas, podréis volver a enviarlo${again ? ` a partir de las ${hhmm(again)}` : ' más tarde'}.`;
                                 showConfirm(error ? { title: 'No se pudo enviar', message: error.message, cancelText: null, variant: 'warning' }
-                                    : { title: 'Enviado', message: `Recordatorio enviado a ${data} cuenta(s).`, cancelText: null, variant: 'info' });
+                                    : { title: sent > 0 ? 'Enviado' : 'No hacía falta enviarlo', message: resultMsg, cancelText: null, variant: 'info' });
                             };
                             return (
                                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
