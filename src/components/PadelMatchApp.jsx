@@ -75,7 +75,13 @@ const printResultSheet = ({ matches, teams, isTennis, categoryLabel }) => {
     dated.forEach(m => { const d = new Date(m.date); const k = dayKey(d); if (!byDay.length || byDay[byDay.length - 1].k !== k) byDay.push({ k, rows: [] }); byDay[byDay.length - 1].rows.push(row(m, hhmm(d))); });
     const first = dated[0] ? new Date(dated[0].date) : null;
     let weekTxt = '';
-    if (first) { const mon = new Date(first); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); weekTxt = 'Semana ' + formatWeekRange(mon); }
+    const lastD = dated.length ? new Date(dated[dated.length - 1].date) : null;
+    if (first) {
+        const mon = new Date(first); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+        const sun = new Date(mon); sun.setDate(sun.getDate() + 7);
+        const fmt = (d) => d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+        weekTxt = lastD && lastD >= sun ? `Del ${fmt(first)} al ${fmt(lastD)}` : 'Semana ' + formatWeekRange(mon);
+    }
     const sections = byDay.map(d => `<h2>${escHtml(d.k.charAt(0).toUpperCase() + d.k.slice(1))}</h2><table>${head}${d.rows.join('')}</table>`).join('')
         + (postponed.length ? `<h2>Aplazados / sin fecha</h2><table>${head}${postponed.map(m => row(m, (m.slot || m.slot_id || '').replace('_', ' '))).join('')}</table>` : '');
     const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1605,7 +1611,8 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
         const list = matches.filter(m => !m.completed && (isAdmin || m.published));
         if (myTeamIds.size === 0) return list;
         const isMine = (m) => (myTeamIds.has(m.t1?.id) || myTeamIds.has(m.t2?.id)) ? 1 : 0;
-        return [...list].sort((a, b) => isMine(b) - isMine(a));
+        const t = (m) => (m.date ? new Date(m.date).getTime() : Infinity);
+        return [...list].sort((a, b) => (isMine(b) - isMine(a)) || (t(a) - t(b)));
     }, [matches, myTeamIds, isAdmin]);
     const drafts = useMemo(() => matches.filter(m => !m.completed && !m.published), [matches]);
     const [matchQuery, setMatchQuery] = useState('');
@@ -2608,7 +2615,23 @@ const CalName = ({ match, team, className = '' }) => {
     );
 };
 
-const CalendarView = memo(({ matches, currentSlots }) => {
+const CalendarView = memo(({ matches }) => {
+    // Semana que se ve (por la fecha real de cada partido); al abrir, la semana actual
+    const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
+    const thisMonday = mondayOf(new Date()).getTime();
+    const isThisWeek = weekStart.getTime() === thisMonday;
+    const moveWeek = (n) => setWeekStart(prev => { const d = new Date(prev); d.setDate(d.getDate() + 7 * n); return d; });
+    const hourOf = (m) => m.date ? new Date(m.date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : (parseSlotId(m.slot)?.hour || '');
+    const dayIdx = (m) => { if (m.date) return (new Date(m.date).getDay() + 6) % 7; const p = parseSlotId(m.slot); return p ? DAYS.indexOf(p.day) : -1; };
+    const weekMatches = useMemo(() => {
+        const end = new Date(weekStart); end.setDate(end.getDate() + 7);
+        // Sin fecha (aplazados): se ven en la semana actual
+        return matches.filter(m => m.date ? (new Date(m.date) >= weekStart && new Date(m.date) < end) : isThisWeek);
+    }, [matches, weekStart, isThisWeek]);
+    const byDay = DAYS.map((day, i) => {
+        const date = new Date(weekStart); date.setDate(date.getDate() + i);
+        return { day, date, list: weekMatches.filter(m => dayIdx(m) === i).sort((a, b) => hourOf(a).localeCompare(hourOf(b))) };
+    });
     return (
         <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4">
             <div className="flex items-center justify-between pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -2631,15 +2654,21 @@ const CalendarView = memo(({ matches, currentSlots }) => {
                 </div>
             </div>
 
+            {/* Semana: flechas para ver la anterior o la siguiente */}
+            <div className="flex items-center justify-center gap-2 text-sm">
+                <button onClick={() => moveWeek(-1)} className="px-3 py-1 rounded-lg font-bold" style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }} aria-label="Semana anterior">‹</button>
+                <span className="font-bold text-white text-center">Semana {formatWeekRange(weekStart)}</span>
+                <button onClick={() => moveWeek(1)} className="px-3 py-1 rounded-lg font-bold" style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }} aria-label="Semana siguiente">›</button>
+                {!isThisWeek && <button onClick={() => setWeekStart(new Date(thisMonday))} className="text-xs underline ml-1" style={{ color: 'var(--text-2)' }}>Esta semana</button>}
+            </div>
+
             {/* Desktop calendar grid */}
             <div className="hidden md:grid grid-cols-7 gap-2">
-                {DAYS.map(day => {
-                    const daySlots = currentSlots.filter(s => s.day === day);
-                    const dayMatches = matches.filter(m => daySlots.some(s => s.id === m.slot));
+                {byDay.map(({ day, date, list: dayMatches }) => {
                     return (
                         <div key={day} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', minHeight: 120 }}>
                             <div className="p-2.5 text-center text-xs font-bold uppercase tracking-wider" style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--border)', color: dayMatches.length > 0 ? 'white' : 'var(--text-3)' }}>
-                                {day.substring(0, 3)}
+                                {day.substring(0, 3)} {date.getDate()}
                                 {dayMatches.length > 0 && (
                                     <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(229,57,53,0.2)', color: '#E53935' }}>
                                         {dayMatches.length}
@@ -2653,18 +2682,12 @@ const CalendarView = memo(({ matches, currentSlots }) => {
                                     </div>
                                 ) : (
                                     dayMatches
-                                        .sort((a, b) => {
-                                            const sA = currentSlots.find(s => s.id === a.slot);
-                                            const sB = currentSlots.find(s => s.id === b.slot);
-                                            return (sA?.hour || '').localeCompare(sB?.hour || '');
-                                        })
                                         .map(match => {
-                                            const slot = currentSlots.find(s => s.id === match.slot);
                                             const sc = match.completed ? '#00ff87' : match.postponed ? '#F59E0B' : '#E53935';
                                             const sb = match.completed ? 'rgba(0,255,135,0.07)' : match.postponed ? 'rgba(245,158,11,0.07)' : 'rgba(229,57,53,0.07)';
                                             return (
                                                 <div key={match.id} className="p-2 rounded-lg" style={{ background: sb, border: `1px solid ${sc}30` }}>
-                                                    <div className="text-[10px] font-mono font-bold mb-1" style={{ color: sc }}>{slot?.hour}</div>
+                                                    <div className="text-[10px] font-mono font-bold mb-1" style={{ color: sc }}>{hourOf(match)}</div>
                                                     <CalName match={match} team={match.t1} className="text-[10px] leading-tight truncate block" />
                                                     <div className="text-[10px] text-center my-0.5" style={{ color: 'var(--text-3)' }}>vs</div>
                                                     <CalName match={match} team={match.t2} className="text-[10px] leading-tight truncate block" />
@@ -2683,28 +2706,20 @@ const CalendarView = memo(({ matches, currentSlots }) => {
 
             {/* Mobile: list by day */}
             <div className="md:hidden space-y-3">
-                {DAYS.map(day => {
-                    const daySlots = currentSlots.filter(s => s.day === day);
-                    const dayMatches = matches.filter(m => daySlots.some(s => s.id === m.slot));
+                {byDay.map(({ day, date, list: dayMatches }) => {
                     if (dayMatches.length === 0) return null;
                     return (
                         <div key={day} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                             <div className="p-3 font-bold text-white text-sm" style={{ background: 'rgba(229,57,53,0.1)', borderBottom: '1px solid var(--border)' }}>
-                                {day} <span className="text-xs font-normal ml-1" style={{ color: 'var(--text-2)' }}>({dayMatches.length} partido{dayMatches.length !== 1 ? 's' : ''})</span>
+                                {day} {date.getDate()} <span className="text-xs font-normal ml-1" style={{ color: 'var(--text-2)' }}>({dayMatches.length} partido{dayMatches.length !== 1 ? 's' : ''})</span>
                             </div>
                             <div className="p-3 space-y-2">
                                 {dayMatches
-                                    .sort((a, b) => {
-                                        const sA = currentSlots.find(s => s.id === a.slot);
-                                        const sB = currentSlots.find(s => s.id === b.slot);
-                                        return (sA?.hour || '').localeCompare(sB?.hour || '');
-                                    })
                                     .map(match => {
-                                        const slot = currentSlots.find(s => s.id === match.slot);
                                         const sc = match.completed ? '#00ff87' : match.postponed ? '#F59E0B' : '#E53935';
                                         return (
                                             <div key={match.id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ border: `1px solid ${sc}25`, background: `${sc}08` }}>
-                                                <span className="text-sm font-mono font-bold w-14 shrink-0" style={{ color: sc }}>{slot?.hour}</span>
+                                                <span className="text-sm font-mono font-bold w-14 shrink-0" style={{ color: sc }}>{hourOf(match)}</span>
                                                 <div className="flex-1 min-w-0 text-sm">
                                                     <CalName match={match} team={match.t1} />
                                                     <span className="text-xs mx-1.5" style={{ color: 'var(--text-3)' }}>vs</span>
@@ -2719,10 +2734,10 @@ const CalendarView = memo(({ matches, currentSlots }) => {
                         </div>
                     );
                 })}
-                {matches.length === 0 && (
+                {weekMatches.length === 0 && (
                     <div className="text-center py-12 rounded-2xl" style={{ border: '2px dashed var(--border)' }}>
                         <Calendar size={32} className="mx-auto mb-3" style={{ color: 'var(--text-3)' }} />
-                        <p style={{ color: 'var(--text-2)' }}>No hay partidos programados.</p>
+                        <p style={{ color: 'var(--text-2)' }}>No hay partidos esta semana.</p>
                     </div>
                 )}
             </div>
@@ -2965,9 +2980,15 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         const wkEnd = new Date(wkStart); wkEnd.setDate(wkEnd.getDate() + 7);
         // ¿Ocupa pista en la semana de juego? (los pendientes de semanas pasadas ya no)
         const inPlayWeek = (m) => !m.date || (new Date(m.date) >= wkStart && new Date(m.date) < wkEnd);
+        // Quien ya juega en la semana que se genera (o tiene un aplazado sin fecha nueva) no entra.
+        // Los partidos de la semana en curso (jornada anterior, aún por jugar) NO bloquean: se puede
+        // generar la jornada siguiente el jueves aunque queden partidos de viernes a domingo.
+        const now0 = new Date();
+        let pastNoResult = 0;
         baseMatches.forEach(m => {
             if (!m.completed) {
-                pendingByTeam.add(m.t1.id); pendingByTeam.add(m.t2.id);
+                if (m.postponed || inPlayWeek(m)) { pendingByTeam.add(m.t1.id); pendingByTeam.add(m.t2.id); }
+                else if (m.date && new Date(m.date) < now0) pastNoResult++;
                 // Un APLAZADO sigue bloqueando a sus jugadores, pero ya no reserva pista en su hora vieja
                 if (!m.postponed && inPlayWeek(m)) pendingPerSlot[m.slot] = (pendingPerSlot[m.slot] || 0) + 1;
             }
@@ -3015,7 +3036,8 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 (groupOrder.length > 1 ? `\n• Orden de grupos: ${groupOrder.map(groupLabel).join(' → ')}. Se reparte por rondas: el primero elige primero (mejores pistas), pero todos los grupos consiguen un partido antes de que ninguno tenga dos.` : '') +
                 (preferred.length ? `\n• ${preferred.length} hora(s) preferente(s) se intentan primero.` : '') +
                 (noCourtsAtAll ? `\n• ⚠️ No hay pistas configuradas: no se limita el nº de partidos por hora.` : '') +
-                (withPending.length ? `\n• ${withPending.length} con partido pendiente no entran (registra su resultado primero, o elimínalo si no se va a jugar).` : '') +
+                (withPending.length ? `\n• ${withPending.length} ya tienen partido esa semana o uno aplazado y no entran.` : '') +
+                (pastNoResult ? `\n• Hay ${pastNoResult} partido(s) ya jugados sin resultado: no bloquean, pero acordaos de meterlo.` : '') +
                 (ungrouped.length ? `\n• ${ungrouped.length} sin grupo no entran (asígnales grupo en "Jugadores").` : '') +
                 (unconfirmed.length ? `\n• ${unconfirmed.length} no han confirmado sus horas esta semana y no entran: ${unconfirmed.slice(0, 12).map(t => t.name).join(', ')}${unconfirmed.length > 12 ? '…' : ''}.` : '') +
                 (weekOffCount ? `\n• ${weekOffCount} con semana libre.` : '') +
@@ -3166,7 +3188,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             }).join(' | ');
             setGenerationLog(`Jornada generada en BORRADOR: ${schedule.length} partidos. Revisa y pulsa "Publicar jornada" para que los jugadores la vean. ` +
                 (perGroup ? `\n${perGroup}.` : '') +
-                (withPending.length ? ` ${withPending.length} ya tenían partido pendiente.` : '') +
+                (withPending.length ? ` ${withPending.length} ya tenían partido esa semana o aplazado.` : '') +
                 (ungrouped.length ? ` ${ungrouped.length} sin grupo.` : '') +
                 (unconfirmed.length ? ` ${unconfirmed.length} sin confirmar sus horas.` : '') +
                 (weekOffCount ? ` ${weekOffCount} con semana libre.` : ''));
@@ -3390,7 +3412,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} sharedHours={appSettings?.shared_hours || []} onSaveSharedHours={(list) => updateAppSettings('shared_hours', list)} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esos dos jugadores ya tienen otro partido pendiente entre sí. Registra o elimina ese partido antes de reabrir este.' : (e?.message || String(e)); showConfirm({ title: 'No se pudo reabrir', message: msg, cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={rankTeams} isAdmin={isAdmin} loading={loading} />}
-                {activeTab === 'calendar' && <CalendarView matches={visibleMatches} currentSlots={currentSlots} />}
+                {activeTab === 'calendar' && <CalendarView matches={visibleMatches} />}
                 {activeTab === 'standings' && (() => {
                     const GROUP_COLORS = [
                         { accent: '#E53935', border: 'rgba(229,57,53,0.4)', bg: 'rgba(229,57,53,0.08)', tabBg: 'rgba(229,57,53,0.18)' },
