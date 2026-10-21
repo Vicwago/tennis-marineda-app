@@ -2601,9 +2601,9 @@ const CalName = ({ match, team, className = '' }) => {
     const done = match.completed && match.winner_id != null;
     const won = done && Number(match.winner_id) === Number(team?.id);
     return (
-        <span className={className} style={{ color: done && !won ? 'var(--text-2)' : 'white', fontWeight: won ? 800 : 500 }}>
-            {won && <Trophy size={11} className="inline -mt-0.5 mr-1" style={{ color: '#FFC107' }} aria-label="Ganador" />}
+        <span className={className} style={{ color: done && !won ? 'var(--text-2)' : 'var(--text-1)', fontWeight: won ? 800 : 500 }}>
             {team?.name}
+            {won && <Trophy size={11} className="inline -mt-0.5 ml-1" style={{ color: '#FFC107' }} aria-label="Ganador" />}
         </span>
     );
 };

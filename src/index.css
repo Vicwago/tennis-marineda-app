@@ -300,6 +300,10 @@
     html.light [style*="color: rgb(255, 138, 128)"] { color: #c62828 !important; }
     html.light [style*="color: rgb(118, 193, 255)"] { color: #1d4ed8 !important; } /* azul pie */
     html.light [style*="color: rgb(0, 212, 255)"]   { color: #0277bd !important; } /* cian */
+    /* Blanco fijo en línea: legible en claro salvo sobre fondo sólido (botón rojo, degradado de color) */
+    html.light [style*="color: white"]:not([style*="background"]),
+    html.light [style*="color: white"][style*="rgba("],
+    html.light [style*="color: rgb(255, 255, 255)"]:not([style*="background"]) { color: var(--text-1) !important; }
     /* "Marineda" bajo el logo: el cian no se lee sobre el azul claro de la barra lateral */
     html.light .brand-sub { color: #0369a1 !important; }
     /* Texto blanco → texto oscuro en modo claro (excepto sobre fondos de color) */
