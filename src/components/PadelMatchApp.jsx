@@ -66,7 +66,7 @@ const printResultSheet = ({ matches, teams, isTennis, categoryLabel }) => {
     const hhmm = (d) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     const dayKey = (d) => d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
     const row = (m, time) => `<tr>
-        <td class="c">${escHtml(time)}</td><td class="c">${escHtml(m.court || '')}</td>
+        <td class="c">${escHtml(time)}</td><td class="c"></td>
         <td class="c">${escHtml(groupOf.get(m.t1?.id) ? groupLabel(groupOf.get(m.t1?.id)).replace('Grupo ', 'G') : '')}</td>
         <td>${escHtml(m.t1?.name)}</td><td>${escHtml(m.t2?.name)}</td>
         <td class="res"></td><td class="win"></td><td class="c"><span class="box"></span></td></tr>`;
@@ -112,7 +112,7 @@ const printResultSheet = ({ matches, teams, isTennis, categoryLabel }) => {
 <header><div><h1>Hoja de resultados · ${escHtml(categoryLabel)}</h1><div class="sub">Escuela de Tenis Marineda${weekTxt ? ' · ' + escHtml(weekTxt) : ''}</div></div>
 <div class="sub">${list.length} partido${list.length !== 1 ? 's' : ''}</div></header>
 ${sections}
-<p class="note">Al terminar, apuntad el marcador (ej.: 6-3 4-6 10-8), el ganador y marcad la casilla si el perdedor ganó algún set. Los monitores lo pasan después a la app.</p>
+<p class="note">La pista se asigna aquí en la cafetería: apuntadla en su columna. Al terminar, apuntad el marcador (ej.: 6-3 4-6 10-8), el ganador y marcad la casilla si el perdedor ganó algún set. Los monitores lo pasan después a la app.</p>
 <script>
   // En la app instalada (móvil) la hoja ocupa toda la pantalla y no hay botón atrás: se cierra la
   // ventana y, si el móvil no deja cerrarla, se vuelve a la app.
@@ -2025,7 +2025,6 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                                         <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>{slotDetails?.day.substring(0, 3)}</span>
                                         <span className="text-xl font-bold text-white">{slotDetails?.hour}</span>
                                         {match.date && <span className="text-[10px] font-medium" style={{ color: 'var(--cyan)' }}>{new Date(match.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>}
-                                        {match.court && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-1" style={{ background: 'rgba(255,193,7,0.12)', color: '#FFC107', border: '1px solid rgba(255,193,7,0.3)' }}>Pista {match.court}</span>}
                                         {match.postponed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full mt-2" style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}>APLAZADO</span>}
                                         {isAdmin && !match.published && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full mt-2" title="Los jugadores aún no ven este partido" style={{ color: '#CE93D8', background: 'rgba(171,71,188,0.18)', border: '1px solid rgba(171,71,188,0.45)' }}>BORRADOR</span>}
                                     </div>
