@@ -82,8 +82,9 @@ const printResultSheet = ({ matches, teams, isTennis, categoryLabel }) => {
         const fmt = (d) => d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
         weekTxt = lastD && lastD >= sun ? `Del ${fmt(first)} al ${fmt(lastD)}` : 'Semana ' + formatWeekRange(mon);
     }
-    const sections = byDay.map(d => `<h2>${escHtml(d.k.charAt(0).toUpperCase() + d.k.slice(1))}</h2><table>${head}${d.rows.join('')}</table>`).join('')
-        + (postponed.length ? `<h2>Aplazados / sin fecha</h2><table>${head}${postponed.map(m => row(m, (m.slot || m.slot_id || '').replace('_', ' '))).join('')}</table>` : '');
+    // En el móvil la tabla se desliza de lado (si no, las cabeceras se montan unas sobre otras)
+    const sections = byDay.map(d => `<h2>${escHtml(d.k.charAt(0).toUpperCase() + d.k.slice(1))}</h2><div class="wrap"><table>${head}${d.rows.join('')}</table></div>`).join('')
+        + (postponed.length ? `<h2>Aplazados / sin fecha</h2><div class="wrap"><table>${head}${postponed.map(m => row(m, (m.slot || m.slot_id || '').replace('_', ' '))).join('')}</table></div>` : '');
     const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hoja de resultados · ${escHtml(categoryLabel)}</title>
 <style>
@@ -100,15 +101,24 @@ const printResultSheet = ({ matches, teams, isTennis, categoryLabel }) => {
   td { height: 30px; } .c { text-align: center; white-space: nowrap; }
   .box { display: inline-block; width: 12px; height: 12px; border: 1px solid #333; }
   .note { margin-top: 12px; font-size: 11px; color: #444; }
-  .bar { margin-bottom: 12px; } .bar button { font-size: 14px; padding: 8px 16px; cursor: pointer; }
-  @media print { .bar { display: none; } body { padding: 0; } }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; justify-content: space-between; align-items: center; background: #fff; padding: 10px 0; margin: -16px 0 10px; padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid #ddd; }
+  .bar button { font-size: 15px; font-weight: bold; padding: 10px 16px; border-radius: 10px; cursor: pointer; border: 1px solid #999; background: #f4f4f5; color: #111; }
+  .bar .print { background: #111; color: #fff; border-color: #111; }
+  .wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media screen and (max-width: 760px) { .wrap table { min-width: 720px; } header { flex-wrap: wrap; gap: 4px; } }
+  @media print { .bar { display: none; } body { padding: 0; } .wrap { overflow: visible; } }
 </style></head><body>
-<div class="bar"><button onclick="window.print()">Imprimir</button></div>
+<div class="bar"><button onclick="volver()">&larr; Volver a la app</button><button class="print" onclick="window.print()">Imprimir</button></div>
 <header><div><h1>Hoja de resultados · ${escHtml(categoryLabel)}</h1><div class="sub">Escuela de Tenis Marineda${weekTxt ? ' · ' + escHtml(weekTxt) : ''}</div></div>
 <div class="sub">${list.length} partido${list.length !== 1 ? 's' : ''}</div></header>
 ${sections}
 <p class="note">Al terminar, apuntad el marcador (ej.: 6-3 4-6 10-8), el ganador y marcad la casilla si el perdedor ganó algún set. Los monitores lo pasan después a la app.</p>
-<script>window.onload = function () { setTimeout(function () { window.print(); }, 300); };</script>
+<script>
+  // En la app instalada (móvil) la hoja ocupa toda la pantalla y no hay botón atrás: se cierra la
+  // ventana y, si el móvil no deja cerrarla, se vuelve a la app.
+  function volver() { try { window.close(); } catch (e) {} setTimeout(function () { location.href = ${JSON.stringify(window.location.origin + '/')}; }, 300); }
+  window.onload = function () { setTimeout(function () { window.print(); }, 300); };
+</script>
 </body></html>`;
     const w = window.open('', '_blank');
     if (!w) return null;   // ventana bloqueada
