@@ -24,6 +24,7 @@ const typeIcon = (type) => {
     switch (type) {
         case 'match_assigned': return <Calendar size={14} />;
         case 'match_reminder': return <AlarmClock size={14} />;
+        case 'idle_reminder': return <AlarmClock size={14} />;
         case 'match_updated': return <Calendar size={14} />;
         case 'match_cancelled': return <BellOff size={14} />;
         case 'match_result': return <Trophy size={14} />;
@@ -38,6 +39,7 @@ const typeColor = (type) => {
     switch (type) {
         case 'match_assigned': return 'var(--cyan)';
         case 'match_reminder': return '#00ff87';
+        case 'idle_reminder': return 'var(--cyan)';
         case 'match_updated': return '#FFC107';
         case 'match_cancelled': return '#ff6b6b';
         case 'match_result': return '#FFC107';

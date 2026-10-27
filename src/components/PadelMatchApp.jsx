@@ -1322,7 +1322,7 @@ const PadelPairCard = ({ team, teams, showConfirm }) => {
 };
 
 const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport, showConfirm }) => {
-    const { updateTeamAvailability, updateWeekOff, appSettings, dataReady, loadFailed, reloadData } = useData();
+    const { updateTeamAvailability, updateWeekOff, appSettings, dataReady, loadFailed, reloadData, data } = useData();
     const { user } = useAuth();
     const [myTeamId, setMyTeamId] = useState('');
     const [selectedAvailability, setSelectedAvailability] = useState([]);
@@ -1340,6 +1340,19 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
     const [showSecond, setShowSecond] = useState(false);
     const { pairRequests } = useData();
     const myPendingRequest = (pairRequests || []).find(r => r.user_id === user?.id);
+
+    // Lleva dos semanas sin partido (mismo criterio que el generador y el aviso de los miércoles):
+    // ningún partido jugado o publicado en las dos semanas anteriores a la semana de juego.
+    // Quien tiene un aplazado pendiente no cuenta: eso lo llevan los monitores.
+    const playWeekTime = playWeek.getTime();
+    const idleMe = useMemo(() => {
+        const tm = teams.find(t => String(t.id) === myTeamId);
+        if (!tm || tm.approved === false || !tm.group) return false;
+        const from = playWeekTime - 14 * 86400000;
+        const mine = (data?.matches || []).filter(m => m.t1?.id === tm.id || m.t2?.id === tm.id);
+        if (mine.some(m => !m.completed && m.postponed)) return false;
+        return !mine.some(m => (m.completed || m.published) && m.date && new Date(m.date).getTime() >= from && new Date(m.date).getTime() < playWeekTime);
+    }, [teams, myTeamId, data?.matches, playWeekTime]);
 
     // Si la ficha elegida ya no es mía (o aún no hay ninguna elegida), se coge la primera
     useEffect(() => {
@@ -1489,6 +1502,28 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
                     {!isLocked && selectedAvailability.length === 0 && <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>Marca abajo al menos una hora.</p>}
                 </div>
             ))}
+
+            {/* Consejo: quien lleva dos semanas sin jugar o marca pocas horas */}
+            {team && !team.week_off && !isLocked && team.approved !== false && team.group && (() => {
+                const n = selectedAvailability.length;
+                const pl = sport === 'padel';
+                const few = n < 6;
+                if (!idleMe && (n === 0 || !few)) return null;
+                const horas = `${n} hora${n === 1 ? '' : 's'}`;
+                const title = idleMe ? (pl ? 'Lleváis dos semanas sin partido' : 'Llevas dos semanas sin partido') : (pl ? 'Con pocas horas es difícil encontraros rival' : 'Con pocas horas es difícil encontrarte rival');
+                const text = idleMe
+                    ? (pl ? 'En la próxima jornada tenéis prioridad. ' : 'En la próxima jornada tienes prioridad. ')
+                      + (n === 0 ? (pl ? 'Marcad todas las horas que podáis para que os encontremos rival.' : 'Marca todas las horas que puedas para que te encontremos rival.')
+                        : few ? (pl ? `Con ${horas} es difícil encontraros rival: si podéis, marcad alguna más.` : `Con ${horas} es difícil encontrarte rival: si puedes, marca alguna más.`)
+                        : (pl ? 'Cuantas más horas marquéis, más fácil será encontraros rival.' : 'Cuantas más horas marques, más fácil será encontrarte rival.'))
+                    : (pl ? `Ahora tenéis ${horas}. Si podéis, marcad alguna más: cuantas más horas, más fácil que os toque partido.` : `Ahora tienes ${horas}. Si puedes, marca alguna más: cuantas más horas, más fácil que te toque partido.`);
+                return (
+                    <div className="p-4 rounded-xl" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.35)' }}>
+                        <p className="font-bold text-white text-sm">{title}</p>
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>{text}</p>
+                    </div>
+                );
+            })()}
 
             {/* Deadline banner */}
             {isLocked && (
