@@ -496,7 +496,7 @@ const SearchBox = ({ value, onChange, placeholder }) => (
     </div>
 );
 
-const TeamsView = memo(({ teams: allTeams, pendingTeamIds, onApproveTeam, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
+const TeamsView = memo(({ teams: allTeams, pendingTeamIds, idleTeamIds, onApproveTeam, isAdmin, isTennis, setShowImportModal, editingTeamId, setEditingTeamId, editingDay, setEditingDay, currentSlots, availabilitySlots, toggleAvailability, selectedAvailability, saveTeamAvailability, startEditing, generateDemoData, onDeleteTeam, onUpdateGroup, onAddTeam, onClearAll, onLinkAccount, onUnlinkAccount, onToggleWeekOff, listUsers, showConfirm }) => {
     // Inscripciones pendientes de aprobar: solo las ven los monitores (arriba, para aprobarlas)
     const pendingApproval = useMemo(() => (isAdmin ? allTeams.filter(t => t.approved === false) : []), [allTeams, isAdmin]);
     const teams = useMemo(() => (isAdmin ? allTeams : allTeams.filter(t => t.approved !== false)), [allTeams, isAdmin]);
@@ -613,6 +613,7 @@ const TeamsView = memo(({ teams: allTeams, pendingTeamIds, onApproveTeam, isAdmi
     // Monitores: quién puede a una hora concreta (para llenar una pista que ha quedado libre)
     const [slotFilter, setSlotFilter] = useState('');
     const [onlyFree, setOnlyFree] = useState(false);
+    const [onlyIdle, setOnlyIdle] = useState(false);
     const [addOpen, setAddOpen] = useState(false);
     const [addName, setAddName] = useState('');
     const [addGroup, setAddGroup] = useState('');
@@ -632,8 +633,9 @@ const TeamsView = memo(({ teams: allTeams, pendingTeamIds, onApproveTeam, isAdmi
             : selectedGroup === 'Todos' ? teams : teams.filter(t => t.group === selectedGroup);
         if (slotFilter) list = list.filter(t => (t.availability || []).includes(slotFilter) && !t.week_off);
         if (onlyFree) list = list.filter(t => !pendingTeamIds?.has(t.id));
+        if (onlyIdle) list = list.filter(t => idleTeamIds?.has(t.id));
         return list;
-    }, [teams, selectedGroup, query, slotFilter, onlyFree, pendingTeamIds]);
+    }, [teams, selectedGroup, query, slotFilter, onlyFree, onlyIdle, pendingTeamIds, idleTeamIds]);
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -669,6 +671,12 @@ const TeamsView = memo(({ teams: allTeams, pendingTeamIds, onApproveTeam, isAdmi
                         <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none px-1" style={{ color: 'var(--text-2)' }}>
                             <input type="checkbox" checked={onlyFree} onChange={e => setOnlyFree(e.target.checked)} className="w-4 h-4 accent-cyan-400" />
                             Solo sin partido pendiente
+                        </label>
+                    )}
+                    {isAdmin && (
+                        <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none px-1" style={{ color: 'var(--text-2)' }}>
+                            <input type="checkbox" checked={onlyIdle} onChange={e => setOnlyIdle(e.target.checked)} className="w-4 h-4 accent-cyan-400" />
+                            2 semanas sin jugar
                         </label>
                     )}
                     {isAdmin && (
@@ -774,11 +782,11 @@ const TeamsView = memo(({ teams: allTeams, pendingTeamIds, onApproveTeam, isAdmi
                 </div>
             )}
 
-            {isAdmin && (slotFilter || onlyFree) && (
+            {isAdmin && (slotFilter || onlyFree || onlyIdle) && (
                 <p className="text-xs px-1" style={{ color: 'var(--text-2)' }}>
                     {filteredTeams.length} {isTennis ? 'jugador(es)' : 'pareja(s)'}
                     {slotFilter ? ` que pueden el ${(currentSlots.find(s => s.id === slotFilter)?.day || '').toLowerCase()} a las ${currentSlots.find(s => s.id === slotFilter)?.hour || ''}` : ''}
-                    {onlyFree ? ' sin partido pendiente' : ''}{!query.trim() && selectedGroup !== 'Todos' ? ` · grupo ${selectedGroup}` : ''}.
+                    {onlyFree ? ' sin partido pendiente' : ''}{onlyIdle ? ' que llevan 2 semanas sin jugar' : ''}{!query.trim() && selectedGroup !== 'Todos' ? ` · grupo ${selectedGroup}` : ''}.
                     {' '}Para emparejarlos, "Añadir partido" en Jornada.
                 </p>
             )}
@@ -836,6 +844,7 @@ const TeamsView = memo(({ teams: allTeams, pendingTeamIds, onApproveTeam, isAdmi
                                                 {team.name.substring(0, 2).toUpperCase()}
                                             </div>
                                             <h3 className="font-bold text-white text-base">{team.name}</h3>
+                                            {isAdmin && idleTeamIds?.has(team.id) && !team.week_off && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ color: '#FFC107', border: '1px solid rgba(255,193,7,0.45)' }} title="No ha jugado (ni tiene partido) en las últimas dos semanas">2 sem. sin jugar</span>}
                                             {isAdmin && team.approved === false && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ color: 'var(--cyan)', border: '1px solid rgba(0,212,255,0.4)' }} title="Inscripción nueva: no sale en el ranking ni en las jornadas hasta aprobarla">por aprobar</span>}
                                         </div>
                                         {isAdmin ? (
@@ -2810,6 +2819,12 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
     const visibleMatches = useMemo(() => (isAdmin ? matches : matches.filter(m => m.published || m.completed)), [isAdmin, matches]);
     // Fichas con un partido pendiente (para el filtro "Solo sin partido pendiente" de Jugadores)
     const pendingTeamIds = useMemo(() => new Set((data?.matches || []).filter(m => !m.completed).flatMap(m => [m.t1?.id, m.t2?.id]).filter(Boolean)), [data?.matches]);
+    // Fichas que no han jugado ni tienen partido (jugado o publicado) desde hace dos semanas
+    const idleTeamIds = useMemo(() => {
+        const since = Date.now() - 14 * 86400000;
+        const active = new Set((data?.matches || []).filter(m => (m.completed || m.published) && m.date && new Date(m.date).getTime() >= since).flatMap(m => [m.t1?.id, m.t2?.id]));
+        return new Set((data?.teams || []).filter(t => t.approved !== false && t.group && !active.has(t.id)).map(t => t.id));
+    }, [data?.matches, data?.teams]);
     const isTennis = sport === 'tennis';
 
     // Initialize Role from Auth
@@ -3009,6 +3024,18 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
         const genWeek = resolvePlayWeekStart(appSettings?.play_week_start);
         const unconfirmed = requireConfirm ? active.filter(t => t.group && !pendingByTeam.has(t.id) && !isConfirmedForWeek(t, genWeek)) : [];
         const eligible = active.filter(t => t.group && !pendingByTeam.has(t.id) && (!requireConfirm || isConfirmedForWeek(t, genWeek)));
+        // ── Quién lleva más tiempo sin jugar: partidos (jugados o publicados) en las 2 semanas
+        // anteriores a la semana que se genera. 2 = ninguno, 1 = uno, 0 = dos o más. Tiene prioridad.
+        const twoWeeksBefore = new Date(genWeek); twoWeeksBefore.setDate(twoWeeksBefore.getDate() - 14);
+        const recentCount = new Map();
+        baseMatches.forEach(m => {
+            if (!(m.completed || m.published) || !m.date) return;
+            const d = new Date(m.date);
+            if (d < twoWeeksBefore || d >= genWeek) return;
+            [m.t1?.id, m.t2?.id].forEach(id => recentCount.set(id, (recentCount.get(id) || 0) + 1));
+        });
+        const idleLevel = (t) => Math.max(0, 2 - (recentCount.get(t.id) || 0));
+        const idleEligible = eligible.filter(t => idleLevel(t) === 2);
         const weekOffCount = teams.length - active.length;
 
         // ── Rotación de grupos ──────────────────────────────────────────────────
@@ -3045,6 +3072,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 (groupOrder.length > 1 ? `\n• Orden de grupos: ${groupOrder.map(groupLabel).join(' → ')}. Se reparte por rondas: el primero elige primero (mejores pistas), pero todos los grupos consiguen un partido antes de que ninguno tenga dos.` : '') +
                 (preferred.length ? `\n• ${preferred.length} hora(s) preferente(s) se intentan primero.` : '') +
                 (noCourtsAtAll ? `\n• ⚠️ No hay pistas configuradas: no se limita el nº de partidos por hora.` : '') +
+                (idleEligible.length ? `\n• ${idleEligible.length} llevan dos semanas sin jugar: van con prioridad.` : '') +
                 (withPending.length ? `\n• ${withPending.length} ya tienen partido esa semana o uno aplazado y no entran.` : '') +
                 (pastNoResult ? `\n• Hay ${pastNoResult} partido(s) ya jugados sin resultado: no bloquean, pero acordaos de meterlo.` : '') +
                 (ungrouped.length ? `\n• ${ungrouped.length} sin grupo no entran (asígnales grupo en "Jugadores").` : '') +
@@ -3107,13 +3135,12 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             // Reparto POR RONDAS siguiendo el orden de rotación: en cada ronda, cada grupo (por
             // orden) coloca UN partido — el primero elige primero y se lleva las mejores pistas —
             // y se repite hasta que no quepa nada más. Así, con pistas escasas, ningún grupo se
-            // queda entero sin jugar mientras otro juega dos veces (antes el primero se llevaba
-            // TODAS las pistas). Dentro de cada grupo van antes las parejas con menos horas
-            // compatibles (las difíciles de cuadrar no se quedan fuera).
+            // queda entero sin jugar mientras otro juega dos veces.
+            // Dentro de cada grupo: primero los cruces aún no jugados; luego los de quien lleva más
+            // tiempo sin jugar; y a igualdad, las parejas con menos horas compatibles.
+            const prioOf = (m) => idleLevel(m.t1) + idleLevel(m.t2);
             const byGroup = new Map(groupOrder.map(g => [g, []]));
-            // Primero los cruces que aún no se han jugado; la vuelta (doble vuelta) después
-            possibleMatchups.sort((a, b) => (a.met - b.met) || (a.difficulty - b.difficulty)).forEach(m => { byGroup.get(m.group)?.push(m); });
-            const assignedPerSlot = {};
+            possibleMatchups.sort((a, b) => (a.met - b.met) || (prioOf(b) - prioOf(a)) || (a.difficulty - b.difficulty)).forEach(m => { byGroup.get(m.group)?.push(m); });
             // Pádel: quien juega en dos parejas no puede tener dos partidos a la misma hora.
             // Se compara por cuenta y por nombre (nombre y apellido, al menos dos palabras).
             const teamById = new Map(teams.map(t => [t.id, t]));
@@ -3123,21 +3150,12 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 const pa = peopleOf(a), pb = peopleOf(b);
                 return pa.ids.some(id => pb.ids.includes(id)) || pa.names.some(x => pb.names.some(y => looseNameMatch(x, y)));
             };
-            const teamsAtSlot = {};
+            const baseAtSlot = {};
             if (!isTennis) baseMatches.forEach(m => {
                 if (m.completed || m.postponed || !inPlayWeek(m)) return;
-                (teamsAtSlot[m.slot] = teamsAtSlot[m.slot] || []).push(teamById.get(m.t1?.id), teamById.get(m.t2?.id));
+                (baseAtSlot[m.slot] = baseAtSlot[m.slot] || []).push(teamById.get(m.t1?.id), teamById.get(m.t2?.id));
             });
             const toMin = (h) => { const [a, b] = String(h || '').split(':').map(Number); return a * 60 + (b || 0); };
-            const clashes = (match, slot) => {
-                if (isTennis) return false;
-                const [d, h] = slot.split('_');
-                return Object.entries(teamsAtSlot).some(([s, list]) => {
-                    const [d2, h2] = s.split('_');
-                    if (d2 !== d || Math.abs(toMin(h2) - toMin(h)) >= 90) return false;   // un partido de pádel dura 1h30
-                    return list.some(o => sharePerson(o, match.t1) || sharePerson(o, match.t2));
-                });
-            };
             // Horas que comparten pista ("17:00|17:30"): por cada día, una sola bolsa de pistas
             // = las pistas de la hora que más tenga, menos los partidos pendientes en cualquiera de las dos.
             const shareGroupOf = {};   // "mar@20:30" o "@20:30" → grupo
@@ -3147,43 +3165,81 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 const g = shareGroupOf[`${d}@${h}`] || shareGroupOf[`@${h}`];
                 return g ? `${d}|${g}` : null;
             };
-            const poolLeft = {};
+            const basePool = {};
             const poolCap = {};
             if (!noCourtsConfig) {
                 Object.keys(effCourts).forEach(slot => {
                     const k = poolKey(slot);
                     if (k) poolCap[k] = Math.max(poolCap[k] || 0, effCourts[slot] || 0);
                 });
-                Object.keys(poolCap).forEach(k => { poolLeft[k] = poolCap[k]; });
-                Object.entries(pendingPerSlot).forEach(([slot, n]) => { const k = poolKey(slot); if (k && k in poolLeft) poolLeft[k] = Math.max(0, poolLeft[k] - n); });
+                Object.keys(poolCap).forEach(k => { basePool[k] = poolCap[k]; });
+                Object.entries(pendingPerSlot).forEach(([slot, n]) => { const k = poolKey(slot); if (k && k in basePool) basePool[k] = Math.max(0, basePool[k] - n); });
             }
-            const hasCourt = (slot) => noCourtsConfig || ((weeklyCourts[slot] || 0) > 0 && (!poolKey(slot) || (poolLeft[poolKey(slot)] || 0) > 0));
-            const tryPlace = (match) => {
-                if (scheduledTeamIds.has(match.t1.id) || scheduledTeamIds.has(match.t2.id)) return false;
-                const finalSlot = match.validSlots.find(slot => hasCourt(slot) && !clashes(match, slot));
-                if (!finalSlot) return false;
-                const n = (assignedPerSlot[finalSlot] = (assignedPerSlot[finalSlot] || 0) + 1);
-                schedule.push({
-                    t1: match.t1, t2: match.t2, slot: finalSlot,
-                    court: noCourtsConfig ? null : (poolKey(finalSlot) ? (poolCap[poolKey(finalSlot)] - poolLeft[poolKey(finalSlot)] + 1) : (pendingPerSlot[finalSlot] || 0) + n),   // nº de pista (tras las ya ocupadas)
-                    date: dateForSlotInWeek(finalSlot, playWeek)?.toISOString() ?? null, // fecha real del partido (semana de juego)
-                });
-                scheduledTeamIds.add(match.t1.id);
-                scheduledTeamIds.add(match.t2.id);
-                (teamsAtSlot[finalSlot] = teamsAtSlot[finalSlot] || []).push(match.t1, match.t2);
-                if (!noCourtsConfig) { weeklyCourts[finalSlot]--; if (poolKey(finalSlot)) poolLeft[poolKey(finalSlot)]--; }
-                return true;
-            };
-            let progress = true;
-            while (progress) {
-                progress = false;
-                for (const g of groupOrder) {
-                    const list = byGroup.get(g) || [];
-                    for (let i = 0; i < list.length; i++) {
-                        if (tryPlace(list[i])) { list.splice(i, 1); progress = true; break; }
+            // Un intento de reparto completo (con las mismas reglas de siempre) sobre unas listas dadas
+            const runAttempt = (lists) => {
+                const courtsLeft = { ...weeklyCourts };
+                const pool = { ...basePool };
+                const atSlot = Object.fromEntries(Object.entries(baseAtSlot).map(([k, v]) => [k, [...v]]));
+                const perSlot = {};
+                const used = new Set();
+                const out = [];
+                let rankSum = 0;
+                const hasCourt = (slot) => noCourtsConfig || ((courtsLeft[slot] || 0) > 0 && (!poolKey(slot) || (pool[poolKey(slot)] || 0) > 0));
+                const clashes = (match, slot) => {
+                    if (isTennis) return false;
+                    const [d, h] = slot.split('_');
+                    return Object.entries(atSlot).some(([s2, list]) => {
+                        const [d2, h2] = s2.split('_');
+                        if (d2 !== d || Math.abs(toMin(h2) - toMin(h)) >= 90) return false;   // un partido de pádel dura 1h30
+                        return list.some(o => sharePerson(o, match.t1) || sharePerson(o, match.t2));
+                    });
+                };
+                const place = (match) => {
+                    if (used.has(match.t1.id) || used.has(match.t2.id)) return false;
+                    const slot = match.validSlots.find(sl => hasCourt(sl) && !clashes(match, sl));
+                    if (!slot) return false;
+                    const n = (perSlot[slot] = (perSlot[slot] || 0) + 1);
+                    out.push({
+                        t1: match.t1, t2: match.t2, slot,
+                        court: noCourtsConfig ? null : (poolKey(slot) ? (poolCap[poolKey(slot)] - pool[poolKey(slot)] + 1) : (pendingPerSlot[slot] || 0) + n),
+                        date: dateForSlotInWeek(slot, playWeek)?.toISOString() ?? null, // fecha real del partido (semana de juego)
+                    });
+                    used.add(match.t1.id); used.add(match.t2.id);
+                    (atSlot[slot] = atSlot[slot] || []).push(match.t1, match.t2);
+                    if (!noCourtsConfig) { courtsLeft[slot]--; if (poolKey(slot)) pool[poolKey(slot)]--; }
+                    rankSum += slotRank(slot);
+                    return true;
+                };
+                const work = lists.map(l => [...l]);
+                let progress = true;
+                while (progress) {
+                    progress = false;
+                    for (const list of work) {
+                        for (let i = 0; i < list.length; i++) {
+                            if (place(list[i])) { list.splice(i, 1); progress = true; break; }
+                        }
                     }
                 }
+                // Cada jugador colocado suma; y suma más cuanto más tiempo llevaba sin jugar
+                const score = out.reduce((acc, m) => acc + (1 + 3 * idleLevel(m.t1)) + (1 + 3 * idleLevel(m.t2)), 0);
+                return { out, used, score, rankSum };
+            };
+            // Se prueba el reparto de siempre y ~300 variantes (otro orden dentro de cada grupo y, a
+            // veces, otra hora para un cruce) y se queda el que coloca a más gente, con prioridad para
+            // quien lleva más tiempo sin jugar; a igualdad, el que usa mejores horas (★).
+            const baseLists = groupOrder.map(g => byGroup.get(g) || []);
+            const better = (a, b) => a.score > b.score || (a.score === b.score && a.rankSum < b.rankSum);
+            let best = runAttempt(baseLists);
+            for (let it = 0; it < 300; it++) {
+                const lists = baseLists.map(list => list
+                    .map(m => ({ m, k: m.met * 100000 - prioOf(m) * 1000 + m.difficulty + Math.random() * 8 }))
+                    .sort((a, b) => a.k - b.k)
+                    .map(({ m }) => (Math.random() < 0.25 ? { ...m, validSlots: [...m.validSlots].sort(() => Math.random() - 0.5) } : m)));
+                const r = runAttempt(lists);
+                if (better(r, best)) best = r;
             }
+            schedule = best.out;
+            scheduledTeamIds = best.used;
 
             if (redoDrafts) await discardDrafts();
             await createSchedule(schedule);
@@ -3195,8 +3251,10 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 const names = unassigned.filter(t => t.group === g).map(t => t.name);
                 return `${groupLabel(g)}: ${schedule.filter(m => m.t1.group === g).length} partidos` + (names.length ? ` · sin rival: ${names.join(', ')}` : '');
             }).join(' | ');
+            const idleLeft = unassigned.filter(t => idleLevel(t) === 2).map(t => t.name);
             setGenerationLog(`Jornada generada en BORRADOR: ${schedule.length} partidos. Revisa y pulsa "Publicar jornada" para que los jugadores la vean. ` +
                 (perGroup ? `\n${perGroup}.` : '') +
+                (idleLeft.length ? `\nAtención: llevan dos semanas sin jugar y siguen sin partido: ${idleLeft.join(', ')}. Búscales hueco en Jugadores con "Puede: día y hora" o "2 semanas sin jugar".` : '') +
                 (withPending.length ? ` ${withPending.length} ya tenían partido esa semana o aplazado.` : '') +
                 (ungrouped.length ? ` ${ungrouped.length} sin grupo.` : '') +
                 (unconfirmed.length ? ` ${unconfirmed.length} sin confirmar sus horas.` : '') +
@@ -3417,7 +3475,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
             <div className="w-full max-w-6xl mx-auto">
                 {activeTab === 'availability' && <MyAvailabilityView teams={teams} currentSlots={currentSlots} availabilitySlots={availabilitySlots} sport={sport} showConfirm={showConfirm} />}
                 {activeTab === 'schedule' && <ScheduleView matches={matches} teams={teams} isAdmin={isAdmin} isTennis={isTennis} generateWeeklySchedule={generateWeeklyScheduleHandler} generationLog={generationLog} currentSlots={currentSlots} submitResult={submitResultHandler} postponeMatch={postponeMatchHandler} registerWalkover={registerWalkoverHandler} createMatch={createMatch} updateMatch={updateMatch} deleteMatch={deleteMatch} publishSchedule={publishSchedule} discardDrafts={discardDrafts} onChatClick={(match) => setChatMatch(match)} categoryLabel={isTennis ? (tennisCategory === 'juveniles' ? 'Tenis juveniles' : 'Tenis adultos') : 'Pádel'} appSettings={appSettings} updateAppSettings={updateAppSettings} showConfirm={showConfirm} />}
-                {activeTab === 'teams' && <TeamsView teams={teams} pendingTeamIds={pendingTeamIds} onApproveTeam={approveTeam} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} onLinkAccount={linkTeamAccount} onUnlinkAccount={unlinkTeamAccount} onToggleWeekOff={updateWeekOff} listUsers={listUsers} showConfirm={showConfirm} />}
+                {activeTab === 'teams' && <TeamsView teams={teams} pendingTeamIds={pendingTeamIds} idleTeamIds={idleTeamIds} onApproveTeam={approveTeam} isAdmin={isAdmin} isTennis={isTennis} setShowImportModal={setShowImportModal} editingTeamId={editingTeamId} setEditingTeamId={setEditingTeamId} editingDay={editingDay} setEditingDay={setEditingDay} currentSlots={currentSlots} availabilitySlots={availabilitySlots} toggleAvailability={toggleAvailability} selectedAvailability={selectedAvailability} saveTeamAvailability={saveTeamAvailability} startEditing={startEditing} generateDemoData={generateDemoData} onDeleteTeam={deleteTeam} onUpdateGroup={updateTeamGroup} onAddTeam={createManualTeam} onClearAll={clearAllData} onLinkAccount={linkTeamAccount} onUnlinkAccount={unlinkTeamAccount} onToggleWeekOff={updateWeekOff} listUsers={listUsers} showConfirm={showConfirm} />}
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} sharedHours={appSettings?.shared_hours || []} onSaveSharedHours={(list) => updateAppSettings('shared_hours', list)} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esos dos jugadores ya tienen otro partido pendiente entre sí. Registra o elimina ese partido antes de reabrir este.' : (e?.message || String(e)); showConfirm({ title: 'No se pudo reabrir', message: msg, cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={rankTeams} isAdmin={isAdmin} loading={loading} />}
