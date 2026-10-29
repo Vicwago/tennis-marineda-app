@@ -1655,6 +1655,37 @@ const MyAvailabilityView = memo(({ teams, currentSlots, availabilitySlots, sport
     );
 });
 
+// Partido de un grupo: cuenta el grupo de cualquiera de los dos (casi siempre es el mismo)
+const groupMapOf = (teams) => new Map((teams || []).map(t => [t.id, t.group]));
+const matchInGroup = (m, groupOf, g) => groupOf.get(m.t1?.id) === g || groupOf.get(m.t2?.id) === g;
+
+// Botones para ver los partidos de un solo grupo, con cuántos partidos tiene cada grupo
+// y cuántos jugadores/parejas hay en él (un grupo pequeño tiene menos partidos por fuerza)
+const GroupFilter = ({ matches, teams, value, onChange, isTennis }) => {
+    const groupOf = useMemo(() => groupMapOf(teams), [teams]);
+    const groups = useMemo(() => [...new Set((teams || []).filter(t => t.approved !== false).map(t => t.group).filter(Boolean))]
+        .sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true })), [teams]);
+    if (groups.length < 2) return null;
+    const who = isTennis ? 'jug.' : 'parejas';
+    const chip = (key, top, bottom, on) => (
+        <button key={key} onClick={() => onChange(key)} className="px-3 py-1.5 rounded-lg text-left transition-all"
+            style={on ? { background: 'rgba(0,212,255,0.14)', border: '1px solid rgba(0,212,255,0.55)' } : { background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+            <span className="block text-xs font-bold" style={{ color: on ? 'var(--cyan)' : 'var(--text-1)' }}>{top}</span>
+            <span className="block text-[10px]" style={{ color: 'var(--text-3)' }}>{bottom}</span>
+        </button>
+    );
+    return (
+        <div className="flex flex-wrap gap-1.5">
+            {chip('', 'Todos', `${matches.length} partido${matches.length === 1 ? '' : 's'}`, value === '')}
+            {groups.map(g => {
+                const n = matches.filter(m => matchInGroup(m, groupOf, g)).length;
+                const people = (teams || []).filter(t => t.group === g && t.approved !== false).length;
+                return chip(g, groupLabel(g), `${n} partido${n === 1 ? '' : 's'} · ${people} ${who}`, value === g);
+            })}
+        </div>
+    );
+};
+
 const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, generationLog, currentSlots, submitResult, postponeMatch, registerWalkover, createMatch, updateMatch, deleteMatch, publishSchedule, discardDrafts, onChatClick, isTennis, categoryLabel, appSettings, updateAppSettings, showConfirm }) => {
     const { user } = useAuth();
     // Equipo del usuario logueado (para resaltar "Tu partido" y ponerlo el primero)
@@ -1670,9 +1701,14 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
     }, [matches, myTeamIds, isAdmin]);
     const drafts = useMemo(() => matches.filter(m => !m.completed && !m.published), [matches]);
     const [matchQuery, setMatchQuery] = useState('');
-    const shownMatches = useMemo(() => matchQuery.trim()
-        ? activeMatches.filter(m => matchesSearch(`${m.t1?.name || ''} ${m.t2?.name || ''}`, matchQuery))
-        : activeMatches, [activeMatches, matchQuery]);
+    const [groupFilter, setGroupFilter] = useState('');
+    const shownMatches = useMemo(() => {
+        let list = activeMatches;
+        if (groupFilter) { const groupOf = groupMapOf(teams); list = list.filter(m => matchInGroup(m, groupOf, groupFilter)); }
+        if (matchQuery.trim()) list = list.filter(m => matchesSearch(`${m.t1?.name || ''} ${m.t2?.name || ''}`, matchQuery));
+        return list;
+    }, [activeMatches, matchQuery, groupFilter, teams]);
+    const filtering = !!(matchQuery.trim() || groupFilter);
     const label = isTennis ? 'jugadores' : 'parejas';
 
     // ─── Rotación de grupos: qué grupo va primero en esta jornada ───
@@ -2039,11 +2075,12 @@ const ScheduleView = memo(({ matches, teams, isAdmin, generateWeeklySchedule, ge
                 {activeMatches.length > 3 && (
                     <div className="flex items-center gap-3">
                         <SearchBox value={matchQuery} onChange={setMatchQuery} placeholder={isTennis ? 'Buscar partido por jugador' : 'Buscar partido por jugador o pareja'} />
-                        {matchQuery.trim() && <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>{shownMatches.length} de {activeMatches.length}</span>}
+                        {filtering && <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>{shownMatches.length} de {activeMatches.length}</span>}
                     </div>
                 )}
-                {matchQuery.trim() && shownMatches.length === 0 && (
-                    <p className="text-sm text-center py-6" style={{ color: 'var(--text-3)' }}>Ningún partido pendiente con ese nombre.</p>
+                {activeMatches.length > 0 && <GroupFilter matches={activeMatches} teams={teams} value={groupFilter} onChange={setGroupFilter} isTennis={isTennis} />}
+                {filtering && shownMatches.length === 0 && (
+                    <p className="text-sm text-center py-6" style={{ color: 'var(--text-3)' }}>{matchQuery.trim() ? 'Ningún partido pendiente con ese nombre.' : 'Este grupo no tiene partidos pendientes.'}</p>
                 )}
 
                 {activeMatches.length === 0 && (
@@ -2668,7 +2705,7 @@ const CalName = ({ match, team, className = '' }) => {
     );
 };
 
-const CalendarView = memo(({ matches }) => {
+const CalendarView = memo(({ matches, teams, isTennis }) => {
     // Semana que se ve (por la fecha real de cada partido); al abrir, la semana actual
     const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
     const thisMonday = mondayOf(new Date()).getTime();
@@ -2681,9 +2718,15 @@ const CalendarView = memo(({ matches }) => {
         // Sin fecha (aplazados): se ven en la semana actual
         return matches.filter(m => m.date ? (new Date(m.date) >= weekStart && new Date(m.date) < end) : isThisWeek);
     }, [matches, weekStart, isThisWeek]);
+    const [groupFilter, setGroupFilter] = useState('');
+    const shownWeek = useMemo(() => {
+        if (!groupFilter) return weekMatches;
+        const groupOf = groupMapOf(teams);
+        return weekMatches.filter(m => matchInGroup(m, groupOf, groupFilter));
+    }, [weekMatches, groupFilter, teams]);
     const byDay = DAYS.map((day, i) => {
         const date = new Date(weekStart); date.setDate(date.getDate() + i);
-        return { day, date, list: weekMatches.filter(m => dayIdx(m) === i).sort((a, b) => hourOf(a).localeCompare(hourOf(b))) };
+        return { day, date, list: shownWeek.filter(m => dayIdx(m) === i).sort((a, b) => hourOf(a).localeCompare(hourOf(b))) };
     });
     return (
         <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4">
@@ -2714,6 +2757,9 @@ const CalendarView = memo(({ matches }) => {
                 <button onClick={() => moveWeek(1)} className="px-3 py-1 rounded-lg font-bold" style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }} aria-label="Semana siguiente">›</button>
                 {!isThisWeek && <button onClick={() => setWeekStart(new Date(thisMonday))} className="text-xs underline ml-1" style={{ color: 'var(--text-2)' }}>Esta semana</button>}
             </div>
+
+            {/* Partidos de la semana por grupo (jugados y pendientes); pulsando uno se ven solo los suyos */}
+            {weekMatches.length > 0 && <GroupFilter matches={weekMatches} teams={teams} value={groupFilter} onChange={setGroupFilter} isTennis={isTennis} />}
 
             {/* Desktop calendar grid */}
             <div className="hidden md:grid grid-cols-7 gap-2">
@@ -3514,7 +3560,7 @@ export default function Dashboard({ onNavigate, currentPath, theme = 'dark', onT
                 {activeTab === 'courts' && <CourtsView sport={sport} tennisCategory={tennisCategory} isAdmin={isAdmin} currentSlots={currentSlots} courtAvailability={courtAvailability} courtsMeta={courtsMeta} fixedHours={appSettings?.fixed_hours || []} preferredSlots={appSettings?.preferred_slots || []} sharedHours={appSettings?.shared_hours || []} onSaveSharedHours={(list) => updateAppSettings('shared_hours', list)} fillDailyCourts={fillDailyCourts} updateCourtCount={updateCourtCountHandler} onAddFixedHour={addFixedHour} onRemoveFixedHour={removeFixedHour} onAddSpecialSlot={addSpecialSlot} onRemoveSlot={removeSlot} onClearExtra={clearExtraCourts} onTogglePreferred={togglePreferredSlot} showConfirm={showConfirm} />}
                 {activeTab === 'history' && <HistoryView matches={matches} currentSlots={currentSlots} teams={teams} isAdmin={isAdmin} onCorrect={async (m) => { const ok = await showConfirm({ title: 'Corregir resultado', message: `Se reabrirá el partido ${m.t1?.name} vs ${m.t2?.name} para volver a introducir el resultado. Volverá a "Jornada" como pendiente.`, confirmText: 'Corregir', variant: 'warning' }); if (ok) { try { await reopenMatch(m.id); setActiveTab('schedule'); } catch (e) { const msg = (e?.code === '23505' || /duplicate key/i.test(e?.message || '')) ? 'Esos dos jugadores ya tienen otro partido pendiente entre sí. Registra o elimina ese partido antes de reabrir este.' : (e?.message || String(e)); showConfirm({ title: 'No se pudo reabrir', message: msg, cancelText: null, variant: 'danger' }); } } }} />}
                 {activeTab === 'stats' && <StatsView matches={matches} teams={rankTeams} isAdmin={isAdmin} loading={loading} />}
-                {activeTab === 'calendar' && <CalendarView matches={visibleMatches} />}
+                {activeTab === 'calendar' && <CalendarView matches={visibleMatches} teams={teams} isTennis={isTennis} />}
                 {activeTab === 'standings' && (() => {
                     const GROUP_COLORS = [
                         { accent: '#E53935', border: 'rgba(229,57,53,0.4)', bg: 'rgba(229,57,53,0.08)', tabBg: 'rgba(229,57,53,0.18)' },
